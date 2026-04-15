@@ -1397,6 +1397,34 @@ impl Repository {
         Ok(())
     }
 
+    pub fn update_synced_wiki_page(
+        &self,
+        page: &super::models::WikiPage,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE wiki_pages
+             SET title=?1, slug=?2, page_type=?3, body_markdown=?4, summary=?5, tags=?6,
+                 status=?7, confidence=?8, updated_at=datetime('now'),
+                 last_compiled_at=?9, source_message_id=?10
+             WHERE id=?11",
+            params![
+                page.title,
+                page.slug,
+                page.page_type,
+                page.body_markdown,
+                page.summary,
+                page.tags,
+                page.status,
+                page.confidence,
+                page.last_compiled_at,
+                page.source_message_id,
+                page.id
+            ],
+        )?;
+        Ok(())
+    }
+
     pub fn update_wiki_page_status(
         &self,
         page_id: &str,
@@ -1466,6 +1494,39 @@ impl Repository {
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
                 last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(page)) => Ok(Some(page)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_wiki_page_by_title(
+        &self,
+        title: &str,
+    ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
+             FROM wiki_pages WHERE title = ?1 LIMIT 1"
+        )?;
+        let mut rows = stmt.query_map(params![title], |row| {
+            Ok(super::models::WikiPage {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         match rows.next() {

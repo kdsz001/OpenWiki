@@ -58,6 +58,17 @@ export async function triggerWikiAutoCompile(): Promise<{
   return invoke("trigger_wiki_auto_compile");
 }
 
+export async function syncLocalWiki(path: string): Promise<{
+  root: string;
+  pages_found: number;
+  created: number;
+  updated: number;
+  removed: number;
+  counts: Record<string, number>;
+}> {
+  return invoke("sync_local_wiki", { path });
+}
+
 // ===== Q&A (multi-turn chat) =====
 
 export async function wikiAsk(sessionId: string, question: string): Promise<{

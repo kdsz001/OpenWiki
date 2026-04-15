@@ -1294,6 +1294,9 @@ function WikiSettingsSection() {
   const [autoCompile, setAutoCompile] = useState(true);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState("");
+  const [localWikiPath, setLocalWikiPath] = useState("");
+  const [syncingLocalWiki, setSyncingLocalWiki] = useState(false);
+  const [localWikiSyncResult, setLocalWikiSyncResult] = useState("");
   const [localRawPath, setLocalRawPath] = useState("");
   const [syncingLocalRaw, setSyncingLocalRaw] = useState(false);
   const [localRawSyncResult, setLocalRawSyncResult] = useState("");
@@ -1309,6 +1312,7 @@ function WikiSettingsSection() {
       try {
         const settings = await ss.getSettings();
         setAutoCompile(settings.wiki_auto_compile !== "false");
+        setLocalWikiPath(settings.wiki_local_source_path || "");
         setLocalRawPath(settings.wiki_raw_source_path || "");
       } catch {}
     });
@@ -1388,6 +1392,40 @@ function WikiSettingsSection() {
     setSyncingLocalRaw(false);
   };
 
+  const handleSyncLocalWiki = async () => {
+    const trimmedPath = localWikiPath.trim();
+    if (!trimmedPath) {
+      setLocalWikiSyncResult(t("wiki.localWikiSyncFailed", { error: t("workspaceSetup.notConfigured") }));
+      return;
+    }
+
+    setSyncingLocalWiki(true);
+    setLocalWikiSyncResult("");
+
+    try {
+      const [{ updateSetting }, { syncLocalWiki, getWikiStats }] = await Promise.all([
+        import("../../services/settingsService"),
+        import("../../services/wikiService"),
+      ]);
+
+      await updateSetting("wiki_local_source_path", trimmedPath);
+      const result = await syncLocalWiki(trimmedPath);
+      setStats(await getWikiStats());
+      setLocalWikiSyncResult(
+        t("wiki.localWikiSyncResult", {
+          pages: result.pages_found,
+          created: result.created,
+          updated: result.updated,
+          removed: result.removed,
+        })
+      );
+    } catch (e) {
+      setLocalWikiSyncResult(t("wiki.localWikiSyncFailed", { error: String(e) }));
+    }
+
+    setSyncingLocalWiki(false);
+  };
+
   return (
     <div className="px-5 py-4 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
       <h3 style={{ fontSize: 14, fontWeight: 700, color: "var(--color-text-primary, #1C1917)", marginBottom: 12 }}>
@@ -1453,6 +1491,41 @@ function WikiSettingsSection() {
         {compileResult && (
           <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
             {compileResult}
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 pt-4 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>{t("wiki.localWikiPath")}</div>
+        <p className="mt-1" style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+          {t("wiki.localWikiPathDesc")}
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            type="text"
+            value={localWikiPath}
+            onChange={(e) => setLocalWikiPath(e.target.value)}
+            placeholder="/Users/you/knowledge/wiki"
+            className="flex-1 text-sm px-3 py-2 rounded-lg border border-gray-200/50 dark:border-white/[0.08]
+                       bg-white/50 dark:bg-white/[0.04] text-gray-800 dark:text-gray-200
+                       focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          />
+          <button
+            onClick={handleSyncLocalWiki}
+            disabled={syncingLocalWiki}
+            className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+            style={{
+              backgroundColor: "#F9731615",
+              color: "#F97316",
+              border: "1px solid #F9731630",
+            }}
+          >
+            {syncingLocalWiki ? t("wiki.localWikiSyncing") : t("wiki.localWikiSync")}
+          </button>
+        </div>
+        {localWikiSyncResult && (
+          <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
+            {localWikiSyncResult}
           </p>
         )}
       </div>
