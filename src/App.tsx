@@ -10,6 +10,7 @@ import { WikiView } from "./features/wiki/WikiView";
 import { UpdateBanner } from "./features/update/UpdateBanner";
 import { PreAuthModal } from "./features/automation/PreAuthModal";
 import { AutomationNotices } from "./features/automation/AutomationNotices";
+import { WorkspaceSetupView } from "./features/setup/WorkspaceSetupView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
 import { searchContent } from "./services/dataHubService";
@@ -44,6 +45,8 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadFromDB = useSettingsStore((s) => s.loadFromDB);
+  const isLoaded = useSettingsStore((s) => s.isLoaded);
+  const setupComplete = useSettingsStore((s) => s.setupComplete);
   const setHighlightedIds = useContentStore((s) => s.setHighlightedIds);
 
   // Debounced search — searches both content and wiki pages
@@ -154,6 +157,18 @@ function App() {
     window.addEventListener("navigate-to-wiki-page", handler);
     return () => window.removeEventListener("navigate-to-wiki-page", handler);
   }, [switchTab]);
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8] dark:bg-[#0C0A09]">
+        <div className="text-sm text-gray-500 dark:text-slate-400">{t("action.loading")}</div>
+      </div>
+    );
+  }
+
+  if (!setupComplete) {
+    return <WorkspaceSetupView />;
+  }
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#FAFAF8] dark:bg-[#0C0A09] transition-colors duration-300">
