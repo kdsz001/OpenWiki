@@ -26,8 +26,16 @@ export async function getWikiPage(id: string): Promise<WikiPage | null> {
   return invoke("get_wiki_page", { id });
 }
 
+export async function resolveWikiLink(target: string): Promise<WikiPage | null> {
+  return invoke("resolve_wiki_link", { target });
+}
+
 export async function searchWiki(query: string): Promise<WikiPage[]> {
   return invoke("search_wiki", { query });
+}
+
+export async function getPageThemes(pageId: string): Promise<WikiPage[]> {
+  return invoke("get_page_themes", { pageId });
 }
 
 export async function getWikiStats(): Promise<WikiStats> {
@@ -56,6 +64,17 @@ export async function triggerWikiAutoCompile(): Promise<{
   errors: number;
 }> {
   return invoke("trigger_wiki_auto_compile");
+}
+
+export async function syncLocalWiki(path: string): Promise<{
+  root: string;
+  pages_found: number;
+  created: number;
+  updated: number;
+  removed: number;
+  counts: Record<string, number>;
+}> {
+  return invoke("sync_local_wiki", { path });
 }
 
 // ===== Q&A (multi-turn chat) =====

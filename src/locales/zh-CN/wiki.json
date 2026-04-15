@@ -53,7 +53,10 @@
       "concept": "概念",
       "entity": "实体",
       "source": "来源",
+      "case": "案例",
+      "theme": "主题",
       "comparison": "对比",
+      "dashboard": "地图",
       "overview": "总览"
     }
   },
@@ -75,7 +78,10 @@
     "unknownApp": "未知",
     "compiledAt": "编译于 {{date}}",
     "notCompiled": "未编译",
-    "sourceCount": "{{count}} 个来源"
+    "sourceCount": "{{count}} 个来源",
+    "themes": "所属主题",
+    "readOnly": "本地同步只读",
+    "readOnlyDesc": "这页来自你本地知识库，当前在 OpenWiki 中仅做展示与关联，不会回写原始 Markdown"
   },
   "graph": {
     "title": "知识图谱",

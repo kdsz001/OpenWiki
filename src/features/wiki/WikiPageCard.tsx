@@ -1,4 +1,4 @@
-import { BookOpen, User, FileText, GitCompare, Layers, MessageCircle } from "lucide-react";
+import { BookOpen, User, FileText, GitCompare, Layers, MessageCircle, Briefcase, Network, LayoutDashboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { WikiPage } from "../../types/wiki";
 
@@ -6,7 +6,10 @@ const TYPE_CONFIG_BASE: Record<string, { icon: React.ComponentType<{ className?:
   concept: { icon: BookOpen, labelKey: "browse.pageType.concept", color: "#F97316" },
   entity: { icon: User, labelKey: "browse.pageType.entity", color: "#2563EB" },
   source: { icon: FileText, labelKey: "browse.pageType.source", color: "#16A34A" },
+  case: { icon: Briefcase, labelKey: "browse.pageType.case", color: "#DC2626" },
+  theme: { icon: Network, labelKey: "browse.pageType.theme", color: "#0F766E" },
   comparison: { icon: GitCompare, labelKey: "browse.pageType.comparison", color: "#CA8A04" },
+  dashboard: { icon: LayoutDashboard, labelKey: "browse.pageType.dashboard", color: "#7C3AED" },
   overview: { icon: Layers, labelKey: "browse.pageType.overview", color: "#7C3AED" },
   qa: { icon: MessageCircle, labelKey: "card.qa", color: "#78716C" },
 };

@@ -2,7 +2,525 @@ use crate::ai::wiki_engine;
 use crate::commands::capture::AppState;
 use crate::storage::models::{WikiConversation, WikiLintResult, WikiPage};
 use crate::storage::repository::Repository;
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::Utc;
+use regex::Regex;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
+
+const LOCAL_WIKI_SOURCE_PREFIX: &str = "local-wiki:";
+const LOCAL_WIKI_EDGE_RELATION: &str = "local_wiki_link";
+const THEME_EDGE_RELATION: &str = "belongs_to_theme";
+
+#[derive(Debug, Clone)]
+struct LocalWikiDoc {
+    page_type: String,
+    title: String,
+    slug_seed: String,
+    body_markdown: String,
+    summary: Option<String>,
+    tags: Vec<String>,
+    source_message_id: String,
+    link_targets: Vec<String>,
+}
+
+fn local_wiki_type_from_folder(folder_name: &str) -> Option<&'static str> {
+    match folder_name {
+        "cases" => Some("case"),
+        "concepts" => Some("concept"),
+        "themes" => Some("theme"),
+        "dashboards" => Some("dashboard"),
+        _ => None,
+    }
+}
+
+fn normalize_local_wiki_key(raw: &str) -> Option<String> {
+    let candidate = raw
+        .split('|')
+        .next()
+        .unwrap_or(raw)
+        .split('#')
+        .next()
+        .unwrap_or(raw)
+        .trim()
+        .trim_matches('/');
+    if candidate.is_empty() {
+        return None;
+    }
+    let candidate = candidate.replace('\\', "/");
+    let candidate = candidate
+        .strip_suffix(".md")
+        .unwrap_or(candidate.as_str())
+        .trim()
+        .to_string();
+    if candidate.is_empty() {
+        None
+    } else {
+        Some(candidate.to_lowercase())
+    }
+}
+
+fn slugify_local_wiki_title(title: &str) -> String {
+    let slug: String = title
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c.to_lowercase().next().unwrap_or(c)
+            } else if c == ' ' {
+                '-'
+            } else if ('\u{4E00}'..='\u{9FFF}').contains(&c) {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    slug.trim_matches('-')
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+fn truncate_local_text(input: &str, max_chars: usize) -> String {
+    input.chars().take(max_chars).collect()
+}
+
+fn extract_local_wiki_title(markdown: &str, fallback: &str) -> String {
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if let Some(title) = trimmed.strip_prefix("# ") {
+            let title = title.trim();
+            if !title.is_empty() {
+                return title.to_string();
+            }
+        }
+    }
+    fallback.to_string()
+}
+
+fn extract_local_wiki_summary(markdown: &str) -> Option<String> {
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if let Some(summary) = trimmed.strip_prefix(">") {
+            let summary = summary.trim();
+            if !summary.is_empty() {
+                return Some(truncate_local_text(summary, 180));
+            }
+        }
+    }
+
+    let mut paragraph_lines = Vec::new();
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            if !paragraph_lines.is_empty() {
+                break;
+            }
+            continue;
+        }
+        if trimmed.starts_with('#')
+            || trimmed.starts_with("```")
+            || trimmed.starts_with("- ")
+            || trimmed.starts_with("* ")
+            || trimmed.starts_with("|")
+        {
+            if !paragraph_lines.is_empty() {
+                break;
+            }
+            continue;
+        }
+        paragraph_lines.push(trimmed);
+    }
+
+    if paragraph_lines.is_empty() {
+        None
+    } else {
+        Some(truncate_local_text(&paragraph_lines.join(" "), 180))
+    }
+}
+
+fn extract_local_wiki_links(markdown: &str) -> Vec<String> {
+    let link_re = Regex::new(r"\[\[([^\]]+)\]\]").expect("local wiki link regex");
+    let mut seen = HashSet::new();
+    let mut links = Vec::new();
+
+    for captures in link_re.captures_iter(markdown) {
+        let Some(raw_target) = captures.get(1).map(|m| m.as_str()) else {
+            continue;
+        };
+        let Some(normalized) = normalize_local_wiki_key(raw_target) else {
+            continue;
+        };
+        if normalized.starts_with("raw/") || normalized == "raw" {
+            continue;
+        }
+        if seen.insert(normalized.clone()) {
+            links.push(normalized);
+        }
+    }
+
+    links
+}
+
+fn render_local_wiki_markdown(markdown: &str) -> String {
+    let link_re = Regex::new(r"\[\[([^\]]+)\]\]").expect("local wiki render regex");
+    link_re
+        .replace_all(markdown, |captures: &regex::Captures| {
+            let raw_target = captures.get(1).map(|m| m.as_str()).unwrap_or_default();
+            let display_text = raw_target
+                .split('|')
+                .nth(1)
+                .or_else(|| raw_target.split('/').last())
+                .unwrap_or(raw_target)
+                .trim()
+                .to_string();
+            let Some(normalized_target) = normalize_local_wiki_key(raw_target) else {
+                return display_text;
+            };
+            if normalized_target.starts_with("raw/") || normalized_target == "raw" {
+                return display_text;
+            }
+            let encoded = URL_SAFE_NO_PAD.encode(normalized_target.as_bytes());
+            format!("[{}](openwiki://page/{})", display_text, encoded)
+        })
+        .into_owned()
+}
+
+fn resolve_wiki_link_target(repo: &Repository, raw_target: &str) -> Result<Option<WikiPage>, String> {
+    let Some(normalized) = normalize_local_wiki_key(raw_target) else {
+        return Ok(None);
+    };
+    let last_segment = normalized
+        .rsplit('/')
+        .next()
+        .unwrap_or(normalized.as_str())
+        .trim()
+        .to_string();
+    let normalized_spaced = normalized.replace('/', " ");
+
+    let mut slug_candidates = BTreeSet::new();
+    for candidate in [&normalized, &last_segment, &normalized_spaced] {
+        let slug = slugify_local_wiki_title(candidate);
+        if !slug.is_empty() {
+            slug_candidates.insert(slug);
+        }
+    }
+
+    for slug in slug_candidates {
+        if let Some(page) = repo
+            .get_wiki_page_by_slug(&slug)
+            .map_err(|e| format!("Failed to resolve wiki link slug {}: {}", slug, e))?
+        {
+            return Ok(Some(page));
+        }
+    }
+
+    for title in [&last_segment, &normalized_spaced, &normalized] {
+        if title.trim().is_empty() {
+            continue;
+        }
+        if let Some(page) = repo
+            .get_wiki_page_by_title(title)
+            .map_err(|e| format!("Failed to resolve wiki link title {}: {}", title, e))?
+        {
+            return Ok(Some(page));
+        }
+    }
+
+    Ok(None)
+}
+
+fn build_local_wiki_doc(_root: &Path, file_path: &Path) -> Result<Option<LocalWikiDoc>, String> {
+    let parent_name = file_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("Cannot determine page type for {}", file_path.display()))?;
+    let Some(page_type) = local_wiki_type_from_folder(parent_name) else {
+        return Ok(None);
+    };
+
+    let raw_markdown = fs::read_to_string(file_path)
+        .map_err(|e| format!("Failed to read {}: {}", file_path.display(), e))?;
+    let fallback_title = file_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled");
+    let title = extract_local_wiki_title(&raw_markdown, fallback_title);
+
+    Ok(Some(LocalWikiDoc {
+        page_type: page_type.to_string(),
+        title: title.clone(),
+        slug_seed: title,
+        body_markdown: render_local_wiki_markdown(&raw_markdown),
+        summary: extract_local_wiki_summary(&raw_markdown),
+        tags: Vec::new(),
+        source_message_id: format!("{}{}", LOCAL_WIKI_SOURCE_PREFIX, file_path.display()),
+        link_targets: extract_local_wiki_links(&raw_markdown),
+    }))
+}
+
+fn ensure_unique_local_slug(
+    repo: &Repository,
+    slug_seed: &str,
+    page_id: &str,
+) -> Result<String, String> {
+    let base = slugify_local_wiki_title(slug_seed);
+    let mut candidate = if base.is_empty() {
+        format!("page-{}", &page_id[..8])
+    } else {
+        base
+    };
+    let mut counter = 2usize;
+    loop {
+        match repo
+            .get_wiki_page_by_slug(&candidate)
+            .map_err(|e| format!("Failed to inspect slug {}: {}", candidate, e))?
+        {
+            Some(existing) if existing.id != page_id => {
+                let safe_seed = slugify_local_wiki_title(slug_seed);
+                candidate = if safe_seed.is_empty() {
+                    format!("page-{}-{}", &page_id[..8], counter)
+                } else {
+                    format!("{}-{}", safe_seed, counter)
+                };
+                counter += 1;
+            }
+            _ => return Ok(candidate),
+        }
+    }
+}
+
+fn upsert_local_wiki_page(
+    repo: &Repository,
+    doc: &LocalWikiDoc,
+) -> Result<(String, bool, bool), String> {
+    let existing_by_source = repo
+        .get_wiki_page_by_source_message_id(&doc.source_message_id)
+        .map_err(|e| format!("Failed to inspect local wiki page {}: {}", doc.title, e))?;
+    let existing_by_title = repo
+        .get_wiki_page_by_title(&doc.title)
+        .map_err(|e| format!("Failed to inspect local wiki title {}: {}", doc.title, e))?
+        .filter(|page| page.page_type == doc.page_type);
+    let existing_page = existing_by_source.or(existing_by_title);
+    let now = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let tags_json = if doc.tags.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&doc.tags).unwrap_or_default())
+    };
+
+    match existing_page {
+        Some(existing) => {
+            let updated = WikiPage {
+                id: existing.id.clone(),
+                title: doc.title.clone(),
+                slug: ensure_unique_local_slug(repo, &doc.slug_seed, &existing.id)?,
+                page_type: doc.page_type.clone(),
+                body_markdown: doc.body_markdown.clone(),
+                summary: doc.summary.clone(),
+                tags: tags_json,
+                status: "active".to_string(),
+                confidence: 1.0,
+                created_at: existing.created_at.clone(),
+                updated_at: now.clone(),
+                last_compiled_at: Some(now),
+                source_message_id: Some(doc.source_message_id.clone()),
+            };
+            repo.update_synced_wiki_page(&updated)
+                .map_err(|e| format!("Failed to update local wiki page {}: {}", doc.title, e))?;
+            Ok((existing.id, false, true))
+        }
+        None => {
+            let page_id = uuid::Uuid::new_v4().to_string();
+            let page = WikiPage {
+                id: page_id.clone(),
+                title: doc.title.clone(),
+                slug: ensure_unique_local_slug(repo, &doc.slug_seed, &page_id)?,
+                page_type: doc.page_type.clone(),
+                body_markdown: doc.body_markdown.clone(),
+                summary: doc.summary.clone(),
+                tags: tags_json,
+                status: "active".to_string(),
+                confidence: 1.0,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+                last_compiled_at: Some(now),
+                source_message_id: Some(doc.source_message_id.clone()),
+            };
+            repo.save_wiki_page(&page)
+                .map_err(|e| format!("Failed to save local wiki page {}: {}", doc.title, e))?;
+            Ok((page_id, true, false))
+        }
+    }
+}
+
+fn resolve_local_wiki_root(path: &Path) -> PathBuf {
+    let direct_wiki = path.join("wiki");
+    if direct_wiki.is_dir() {
+        direct_wiki
+    } else {
+        path.to_path_buf()
+    }
+}
+
+#[tauri::command]
+pub fn sync_local_wiki(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<serde_json::Value, String> {
+    let requested = PathBuf::from(path.trim());
+    if path.trim().is_empty() {
+        return Err("Please provide a local knowledge base path".to_string());
+    }
+    if !requested.exists() {
+        return Err(format!("Path does not exist: {}", requested.display()));
+    }
+
+    let root = resolve_local_wiki_root(&requested);
+    if !root.is_dir() {
+        return Err(format!(
+            "Local wiki root is not a directory: {}",
+            root.display()
+        ));
+    }
+
+    let repo = Repository::new(state.db.clone());
+    let mut docs = Vec::new();
+
+    for folder in ["cases", "concepts", "themes", "dashboards"] {
+        let folder_path = root.join(folder);
+        if !folder_path.is_dir() {
+            continue;
+        }
+        let read_dir = fs::read_dir(&folder_path)
+            .map_err(|e| format!("Failed to read {}: {}", folder_path.display(), e))?;
+        for entry in read_dir {
+            let entry = entry.map_err(|e| format!("Failed to read local wiki entry: {}", e))?;
+            let path = entry.path();
+            if path
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("md"))
+                != Some(true)
+            {
+                continue;
+            }
+            if let Some(doc) = build_local_wiki_doc(&root, &path)? {
+                docs.push(doc);
+            }
+        }
+    }
+
+    let mut seen_sources = std::collections::HashSet::new();
+    let mut created = 0usize;
+    let mut updated = 0usize;
+    let mut key_to_page_id = HashMap::new();
+    let mut source_to_page_id = HashMap::new();
+
+    for doc in &docs {
+        let (page_id, was_created, was_updated) = upsert_local_wiki_page(&repo, doc)?;
+        if was_created {
+            created += 1;
+        }
+        if was_updated {
+            updated += 1;
+        }
+        seen_sources.insert(doc.source_message_id.clone());
+        source_to_page_id.insert(doc.source_message_id.clone(), page_id.clone());
+
+        let raw_path = doc
+            .source_message_id
+            .trim_start_matches(LOCAL_WIKI_SOURCE_PREFIX);
+        let file_path = Path::new(raw_path);
+        let relative_no_ext = file_path
+            .strip_prefix(&root)
+            .unwrap_or(file_path)
+            .with_extension("");
+        let relative_key = relative_no_ext.to_string_lossy().replace('\\', "/");
+        if let Some(key) = normalize_local_wiki_key(&relative_key) {
+            key_to_page_id.insert(key, page_id.clone());
+        }
+        if let Some(stem) = file_path.file_stem().and_then(|name| name.to_str()) {
+            if let Some(key) = normalize_local_wiki_key(stem) {
+                key_to_page_id.insert(key, page_id.clone());
+            }
+        }
+        if let Some(key) = normalize_local_wiki_key(&doc.title) {
+            key_to_page_id.insert(key, page_id);
+        }
+    }
+
+    let mut removed = 0usize;
+    for page in repo
+        .get_all_wiki_pages(10_000, 0)
+        .map_err(|e| format!("Failed to inspect existing wiki pages: {}", e))?
+    {
+        let Some(source_message_id) = page.source_message_id.as_deref() else {
+            continue;
+        };
+        if !source_message_id.starts_with(LOCAL_WIKI_SOURCE_PREFIX)
+            || seen_sources.contains(source_message_id)
+        {
+            continue;
+        }
+        repo.delete_edges_for_page(&page.id)
+            .map_err(|e| format!("Failed to delete wiki edges for {}: {}", page.title, e))?;
+        repo.delete_sources_for_page(&page.id)
+            .map_err(|e| format!("Failed to delete wiki sources for {}: {}", page.title, e))?;
+        repo.delete_wiki_page(&page.id)
+            .map_err(|e| format!("Failed to delete stale local wiki page {}: {}", page.title, e))?;
+        removed += 1;
+    }
+
+    let _ = repo.delete_edges_by_relation(LOCAL_WIKI_EDGE_RELATION);
+    let _ = repo.delete_edges_by_relation(THEME_EDGE_RELATION);
+    for doc in &docs {
+        let Some(from_page_id) = source_to_page_id.get(&doc.source_message_id) else {
+            continue;
+        };
+        let mut linked_targets = HashSet::new();
+        for target in &doc.link_targets {
+            let Some(target_page_id) = key_to_page_id.get(target) else {
+                continue;
+            };
+            if target_page_id == from_page_id || !linked_targets.insert(target_page_id.clone()) {
+                continue;
+            }
+            repo.save_wiki_edge(from_page_id, target_page_id, LOCAL_WIKI_EDGE_RELATION, 1.0)
+                .map_err(|e| format!("Failed to save local wiki edge for {}: {}", doc.title, e))?;
+            if let Some(theme_page) = repo.get_wiki_page_by_id(target_page_id).map_err(|e| {
+                format!("Failed to inspect theme target for {}: {}", doc.title, e)
+            })? {
+                if theme_page.page_type == "theme" && doc.page_type != "theme" {
+                    repo.save_wiki_edge(from_page_id, target_page_id, THEME_EDGE_RELATION, 1.0)
+                        .map_err(|e| format!("Failed to save theme edge for {}: {}", doc.title, e))?;
+                }
+            }
+        }
+    }
+
+    let counts_by_type = repo
+        .get_all_wiki_pages(10_000, 0)
+        .map_err(|e| format!("Failed to refresh wiki page counts: {}", e))?
+        .into_iter()
+        .fold(HashMap::<String, usize>::new(), |mut acc, page| {
+            *acc.entry(page.page_type).or_insert(0) += 1;
+            acc
+        });
+
+    Ok(serde_json::json!({
+        "root": root.display().to_string(),
+        "pages_found": docs.len(),
+        "created": created,
+        "updated": updated,
+        "removed": removed,
+        "counts": counts_by_type,
+    }))
+}
 
 // ===== Browse =====
 
@@ -34,12 +552,31 @@ pub fn get_wiki_page(
 }
 
 #[tauri::command]
+pub fn resolve_wiki_link(
+    state: State<'_, AppState>,
+    target: String,
+) -> Result<Option<WikiPage>, String> {
+    let repo = Repository::new(state.db.clone());
+    resolve_wiki_link_target(&repo, &target)
+}
+
+#[tauri::command]
 pub fn search_wiki(
     state: State<'_, AppState>,
     query: String,
 ) -> Result<Vec<WikiPage>, String> {
     let repo = Repository::new(state.db.clone());
     repo.search_wiki_pages(&query, 20)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_page_themes(
+    state: State<'_, AppState>,
+    page_id: String,
+) -> Result<Vec<WikiPage>, String> {
+    let repo = Repository::new(state.db.clone());
+    repo.get_target_pages_by_relation(&page_id, THEME_EDGE_RELATION)
         .map_err(|e| e.to_string())
 }
 
