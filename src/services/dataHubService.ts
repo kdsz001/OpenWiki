@@ -6,6 +6,17 @@ interface DateEntry {
   count: number;
 }
 
+export interface LocalRawSyncSummary {
+  root: string;
+  files_found: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  removed: number;
+  imported_ids?: string[];
+}
+
 export async function getDatesWithContent(): Promise<DateEntry[]> {
   const result = await invoke<[string, number][]>("get_dates_with_content");
   return result.map(([date, count]) => ({ date, count }));
@@ -52,6 +63,10 @@ export async function setExportDir(path: string): Promise<void> {
 
 export async function openExportDir(): Promise<void> {
   return invoke("open_export_dir");
+}
+
+export async function syncLocalRawDirectory(path: string): Promise<LocalRawSyncSummary> {
+  return invoke<LocalRawSyncSummary>("sync_local_raw_directory", { path });
 }
 
 export async function searchContent(query: string): Promise<CapturedContent[]> {

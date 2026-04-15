@@ -145,7 +145,13 @@
     "compiling": "Compiling...",
     "compileResult": "Processed {{processed}}, compiled {{compiled}}",
     "compileResultWithErrors": "Processed {{processed}}, compiled {{compiled}}, {{errors}} errors",
-    "compileFailed": "Compile failed: {{error}}"
+    "compileFailed": "Compile failed: {{error}}",
+    "localRawPath": "Local RAW Path",
+    "localRawPathDesc": "Sync diaries, articles, trading notes, and other raw material into the Library as the source layer for knowledge building",
+    "localRawSync": "Sync RAW into Library",
+    "localRawSyncing": "Syncing...",
+    "localRawSyncResult": "Scanned {{files}} raw files: created {{created}}, updated {{updated}}, skipped {{skipped}}, removed {{removed}}",
+    "localRawSyncFailed": "RAW sync failed: {{error}}"
   },
   "workspaceSetup": {
     "title": "First, decide how content should enter",

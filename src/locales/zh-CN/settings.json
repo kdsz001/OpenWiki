@@ -145,7 +145,13 @@
     "compiling": "编译中...",
     "compileResult": "已处理 {{processed}} 条，编译 {{compiled}} 条",
     "compileResultWithErrors": "已处理 {{processed}} 条，编译 {{compiled}} 条，{{errors}} 个错误",
-    "compileFailed": "编译失败: {{error}}"
+    "compileFailed": "编译失败: {{error}}",
+    "localRawPath": "本地 RAW 路径",
+    "localRawPathDesc": "把日记、文章、交易笔记等原始素材同步进资料库，作为知识提炼的底层来源",
+    "localRawSync": "同步 RAW 到资料库",
+    "localRawSyncing": "同步中...",
+    "localRawSyncResult": "已扫描 {{files}} 个素材文件：新增 {{created}}，更新 {{updated}}，跳过 {{skipped}}，移除 {{removed}}",
+    "localRawSyncFailed": "RAW 同步失败: {{error}}"
   },
   "workspaceSetup": {
     "title": "先确定内容怎么接进来",

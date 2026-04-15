@@ -247,6 +247,7 @@ pub fn run() {
             commands::datahub::set_export_dir,
             commands::datahub::open_export_dir,
             commands::datahub::get_storage_info,
+            commands::datahub::sync_local_raw_directory,
             commands::datahub::export_all_single,
             commands::datahub::export_range_single,
             commands::datahub::open_data_folder,
