@@ -101,13 +101,11 @@ async fn wait_for_callback() -> Result<(String, String), String> {
 
     log::info!("OAuth callback server listening on port {}", CALLBACK_PORT);
 
-    let (stream, _addr) = tokio::time::timeout(
-        std::time::Duration::from_secs(180),
-        listener.accept(),
-    )
-    .await
-    .map_err(|_| "等待授权超时（180秒），请重试".to_string())?
-    .map_err(|e| format!("Failed to accept connection: {}", e))?;
+    let (stream, _addr) =
+        tokio::time::timeout(std::time::Duration::from_secs(180), listener.accept())
+            .await
+            .map_err(|_| "等待授权超时（180秒），请重试".to_string())?
+            .map_err(|e| format!("Failed to accept connection: {}", e))?;
 
     let (reader_half, writer_half) = stream.into_split();
     let mut reader = BufReader::new(reader_half);

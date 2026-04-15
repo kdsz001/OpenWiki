@@ -57,6 +57,15 @@ pub struct CapturedContent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConceptCandidate {
+    pub name: String,
+    pub normalized_name: String,
+    pub importance: f64,
+    pub temporality: String,
+    pub rationale: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WeeklyReport {
     pub id: String,
     pub week_start: String,

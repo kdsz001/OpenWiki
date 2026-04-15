@@ -164,14 +164,16 @@ fn is_process_running(name: &str) -> bool {
 
 /// Read and parse the Claude Desktop config file.
 fn read_config(path: &PathBuf) -> Result<serde_json::Value, String> {
-    let content = std::fs::read_to_string(path).map_err(|e| format!("Cannot read config file: {}", e))?;
-    serde_json::from_str(&content).map_err(|e| format!("Config file format error (invalid JSON): {}", e))
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("Cannot read config file: {}", e))?;
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Config file format error (invalid JSON): {}", e))
 }
 
 /// Write the config back to file.
 fn write_config(path: &PathBuf, config: &serde_json::Value) -> Result<(), String> {
-    let content =
-        serde_json::to_string_pretty(config).map_err(|e| format!("JSON serialization failed: {}", e))?;
+    let content = serde_json::to_string_pretty(config)
+        .map_err(|e| format!("JSON serialization failed: {}", e))?;
     std::fs::write(path, content).map_err(|e| format!("Cannot write config file: {}", e))
 }
 
@@ -223,7 +225,9 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
 
     // 1. Check Node.js
     if !is_node_installed() {
-        return Err("Node.js is required. Please download and install from https://nodejs.org".to_string());
+        return Err(
+            "Node.js is required. Please download and install from https://nodejs.org".to_string(),
+        );
     }
 
     // 2. Check config directory
@@ -240,7 +244,10 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
             std::fs::create_dir_all(config_dir)
                 .map_err(|e| format!("Cannot create OpenClaw config directory: {}", e))?;
         } else {
-            return Err(format!("{} is not installed. Please install {} first.", name, name));
+            return Err(format!(
+                "{} is not installed. Please install {} first.",
+                name, name
+            ));
         }
     }
 
@@ -291,9 +298,15 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
 
     // 7. Check if the target app is running
     let msg = if is_process_running(target.process_name()) {
-        format!("Connected! Please quit and reopen {} for changes to take effect.", name)
+        format!(
+            "Connected! Please quit and reopen {} for changes to take effect.",
+            name
+        )
     } else {
-        format!("Connected! Changes will take effect the next time you open {}.", name)
+        format!(
+            "Connected! Changes will take effect the next time you open {}.",
+            name
+        )
     };
 
     log::info!("MCP connected: xiaoyun entry added to {} config", name);
@@ -302,9 +315,10 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn disconnect_mcp(target: McpTarget) -> Result<(), String> {
-    let config_path = target
-        .config_path()
-        .ok_or(format!("Cannot determine {} config path", target.display_name()))?;
+    let config_path = target.config_path().ok_or(format!(
+        "Cannot determine {} config path",
+        target.display_name()
+    ))?;
 
     if !config_path.exists() {
         return Ok(()); // Nothing to disconnect
@@ -393,7 +407,8 @@ pub async fn copy_content_summary(state: State<'_, AppState>) -> Result<(), Stri
     };
 
     // Write to clipboard directly via arboard
-    let mut clipboard = arboard::Clipboard::new().map_err(|e| format!("Cannot access clipboard: {}", e))?;
+    let mut clipboard =
+        arboard::Clipboard::new().map_err(|e| format!("Cannot access clipboard: {}", e))?;
     clipboard
         .set_text(&text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))?;

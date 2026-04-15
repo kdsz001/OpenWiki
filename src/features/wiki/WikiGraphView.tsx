@@ -29,7 +29,10 @@ const TYPE_COLORS: Record<string, string> = {
   concept: "#F97316",
   entity: "#2563EB",
   source: "#16A34A",
+  case: "#DC2626",
+  theme: "#0F766E",
   comparison: "#CA8A04",
+  dashboard: "#7C3AED",
   overview: "#7C3AED",
 };
 
@@ -37,7 +40,10 @@ const TYPE_LABEL_KEYS: Record<string, string> = {
   concept: "browse.pageType.concept",
   entity: "browse.pageType.entity",
   source: "browse.pageType.source",
+  case: "browse.pageType.case",
+  theme: "browse.pageType.theme",
   comparison: "browse.pageType.comparison",
+  dashboard: "browse.pageType.dashboard",
   overview: "browse.pageType.overview",
 };
 
@@ -330,6 +336,7 @@ function WikiGraphViewInner() {
           page={selectedPage}
           onClose={clearSelection}
           onDelete={(id) => { deletePage(id); clearSelection(); loadGraph(); }}
+          onNavigateToPage={(pageId) => selectPage(pageId)}
         />
       )}
     </div>

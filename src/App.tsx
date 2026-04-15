@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
-import { ClipboardList, Target, Settings, Search, BookOpen } from "lucide-react";
+import { ClipboardList, Target, Settings, Search, BookOpen, HardDrive } from "lucide-react";
 import { ContentList } from "./features/content-list/ContentList";
 import { SettingsView } from "./features/settings/SettingsView";
 import { DataHubView } from "./features/data-hub/DataHubView";
@@ -10,6 +10,7 @@ import { WikiView } from "./features/wiki/WikiView";
 import { UpdateBanner } from "./features/update/UpdateBanner";
 import { PreAuthModal } from "./features/automation/PreAuthModal";
 import { AutomationNotices } from "./features/automation/AutomationNotices";
+import { WorkspaceSetupView } from "./features/setup/WorkspaceSetupView";
 import { useSettingsStore } from "./stores/settingsStore";
 import { useContentStore } from "./stores/contentStore";
 import { searchContent } from "./services/dataHubService";
@@ -30,6 +31,7 @@ const TAB_DEFS: TabItem[] = [
   { id: "content", labelKey: "nav.content", icon: ClipboardList },
   { id: "wiki", labelKey: "nav.wiki", icon: BookOpen },
   { id: "digest", labelKey: "nav.digest", icon: Target },
+  { id: "datahub", labelKey: "nav.datahub", icon: HardDrive },
   { id: "settings", labelKey: "nav.settings", icon: Settings },
 ];
 
@@ -44,6 +46,8 @@ function App() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadFromDB = useSettingsStore((s) => s.loadFromDB);
+  const isLoaded = useSettingsStore((s) => s.isLoaded);
+  const setupComplete = useSettingsStore((s) => s.setupComplete);
   const setHighlightedIds = useContentStore((s) => s.setHighlightedIds);
 
   // Debounced search — searches both content and wiki pages
@@ -154,6 +158,18 @@ function App() {
     window.addEventListener("navigate-to-wiki-page", handler);
     return () => window.removeEventListener("navigate-to-wiki-page", handler);
   }, [switchTab]);
+
+  if (!isLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAF8] dark:bg-[#0C0A09]">
+        <div className="text-sm text-gray-500 dark:text-slate-400">{t("action.loading")}</div>
+      </div>
+    );
+  }
+
+  if (!setupComplete) {
+    return <WorkspaceSetupView />;
+  }
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-[#FAFAF8] dark:bg-[#0C0A09] transition-colors duration-300">

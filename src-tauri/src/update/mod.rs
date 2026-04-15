@@ -20,8 +20,7 @@ use crate::storage::database::Database;
 use crate::storage::repository::Repository;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const GITHUB_API_URL: &str =
-    "https://api.github.com/repos/kdsz001/OpenWiki/releases/latest";
+const GITHUB_API_URL: &str = "https://api.github.com/repos/kdsz001/OpenWiki/releases/latest";
 const RELEASES_PAGE_URL: &str = "https://github.com/kdsz001/OpenWiki/releases";
 
 const SETTING_CHECK_ENABLED: &str = "update.check_enabled";
@@ -103,7 +102,10 @@ pub fn spawn_background_check(app: AppHandle, db: Arc<Database>) {
         // Skip if the user already said "later" for this exact version.
         let dismissed = read_dismissed_version(&db).unwrap_or_default();
         if dismissed == info.version {
-            log::info!("[update] v{} dismissed by user, not notifying", info.version);
+            log::info!(
+                "[update] v{} dismissed by user, not notifying",
+                info.version
+            );
             return;
         }
 
@@ -126,19 +128,14 @@ pub fn spawn_background_check(app: AppHandle, db: Arc<Database>) {
 pub async fn check_for_update_manual(
     _state: State<'_, AppState>,
 ) -> Result<Option<UpdateInfo>, String> {
-    let release = fetch_latest_release()
-        .await
-        .map_err(|e| format!("{}", e))?;
+    let release = fetch_latest_release().await.map_err(|e| format!("{}", e))?;
     Ok(build_update_info(&release))
 }
 
 /// Persist the "later" click for a specific version so we don't re-nag
 /// the user until an even newer version ships.
 #[tauri::command]
-pub fn dismiss_update_version(
-    state: State<'_, AppState>,
-    version: String,
-) -> Result<(), String> {
+pub fn dismiss_update_version(state: State<'_, AppState>, version: String) -> Result<(), String> {
     let repo = Repository::new(state.db.clone());
     repo.update_setting(SETTING_DISMISSED_VERSION, &version)
         .map_err(|e| format!("Failed to save dismissed version: {}", e))
@@ -146,10 +143,7 @@ pub fn dismiss_update_version(
 
 /// Toggle the auto-check feature from the Settings page.
 #[tauri::command]
-pub fn set_update_check_enabled(
-    state: State<'_, AppState>,
-    enabled: bool,
-) -> Result<(), String> {
+pub fn set_update_check_enabled(state: State<'_, AppState>, enabled: bool) -> Result<(), String> {
     let repo = Repository::new(state.db.clone());
     let val = if enabled { "true" } else { "false" };
     repo.update_setting(SETTING_CHECK_ENABLED, val)

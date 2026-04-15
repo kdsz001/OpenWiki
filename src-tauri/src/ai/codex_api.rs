@@ -80,7 +80,10 @@ pub async fn call_codex_api(
     if result.is_empty() {
         Err("Codex API returned empty response".to_string())
     } else {
-        log::info!("Codex API call successful, response length: {}", result.len());
+        log::info!(
+            "Codex API call successful, response length: {}",
+            result.len()
+        );
         Ok(result)
     }
 }

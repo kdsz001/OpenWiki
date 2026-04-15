@@ -212,7 +212,10 @@ impl AiClient {
             .usage
             .map(|u| (u.input_tokens + u.output_tokens) as i32);
 
-        log::info!("Anthropic API response successful, tokens: {:?}", tokens_used);
+        log::info!(
+            "Anthropic API response successful, tokens: {:?}",
+            tokens_used
+        );
 
         Ok(AiResponse { text, tokens_used })
     }
@@ -346,7 +349,10 @@ impl AiClient {
 
         let tokens_used = parsed.usage.map(|u| u.total_tokens as i32);
 
-        log::info!("OpenRouter API response successful, tokens: {:?}", tokens_used);
+        log::info!(
+            "OpenRouter API response successful, tokens: {:?}",
+            tokens_used
+        );
 
         Ok(AiResponse { text, tokens_used })
     }

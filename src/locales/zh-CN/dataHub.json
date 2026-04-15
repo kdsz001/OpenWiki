@@ -39,6 +39,32 @@
     "exportedFiles": "已导出 {{count}} 个文件",
     "openInFinder": "在 Finder 中打开"
   },
+  "import": {
+    "title": "导入现有知识",
+    "description": "把外部 Markdown、Markdown 文件夹或文本笔记导入到 OpenWiki 内容库，后续可以继续筛选、复制或一键整理进知识库。",
+    "files": "导入文件",
+    "folder": "导入文件夹",
+    "result": "已导入 {{imported}} 条，跳过 {{skipped}} 条，失败 {{failed}} 条",
+    "addToKnowledge": "将刚导入内容加入知识库",
+    "addingToKnowledge": "加入知识库中...",
+    "addedToKnowledge": "已加入知识库"
+  },
+  "selection": {
+    "enter": "选择内容",
+    "done": "完成选择",
+    "count": "已选 {{count}} 条",
+    "selectAll": "全选当日",
+    "clearAll": "清空选择",
+    "copySelected": "复制所选",
+    "copying": "复制中...",
+    "copied": "已复制",
+    "exportSelected": "导出所选",
+    "exporting": "导出中...",
+    "exported": "已导出",
+    "addToKnowledge": "加入知识库",
+    "compiling": "加入中...",
+    "compiled": "已加入知识库"
+  },
   "weekday": {
     "sun": "日",
     "mon": "一",

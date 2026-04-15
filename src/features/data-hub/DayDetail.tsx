@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { useDataHubStore } from "../../stores/dataHubStore";
-import { exportDay } from "../../services/dataHubService";
+import { exportDay, exportSelectedSingle, renderSelectedMarkdown } from "../../services/dataHubService";
+import { compileContentsToWiki } from "../../services/wikiService";
 import type { CapturedContent, ContentType } from "../../types/content";
 import { ContentCard } from "../content-list/ContentCard";
 
@@ -32,9 +34,12 @@ function useTypeConfig(): Record<ContentType, { icon: string; label: string; ord
 interface ContentGroupProps {
   type: ContentType;
   items: CapturedContent[];
+  selectionMode: boolean;
+  selectedIds: ReadonlySet<string>;
+  onToggleSelect: (id: string) => void;
 }
 
-function ContentGroup({ type, items }: ContentGroupProps) {
+function ContentGroup({ type, items, selectionMode, selectedIds, onToggleSelect }: ContentGroupProps) {
   const [expanded, setExpanded] = useState(true);
   const typeConfig = useTypeConfig();
   const config = typeConfig[type];
@@ -60,7 +65,13 @@ function ContentGroup({ type, items }: ContentGroupProps) {
       {expanded && (
         <div className="space-y-2">
           {items.map((item) => (
-            <ContentCard key={item.id} content={item} />
+            <ContentCard
+              key={item.id}
+              content={item}
+              selectionMode={selectionMode}
+              selected={selectedIds.has(item.id)}
+              onToggleSelect={() => onToggleSelect(item.id)}
+            />
           ))}
         </div>
       )}
@@ -117,6 +128,10 @@ export function DayDetail() {
   const dayContents = useDataHubStore((s) => s.dayContents);
   const isLoading = useDataHubStore((s) => s.isLoading);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectionStatus, setSelectionStatus] = useState<"idle" | "copying" | "exporting" | "compiling" | "copied" | "exported" | "compiled">("idle");
+  const [compileProgress, setCompileProgress] = useState<{ current: number; total: number; compiled: number; failed: number } | null>(null);
 
   // Group contents by type
   const groupedContents = useMemo(() => {
@@ -138,6 +153,50 @@ export function DayDetail() {
     return sorted;
   }, [dayContents, typeConfig]);
 
+  useEffect(() => {
+    setSelectionMode(false);
+    setSelectedIds([]);
+    setSelectionStatus("idle");
+    setCompileProgress(null);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    const validIds = new Set(dayContents.map((item) => item.id));
+    setSelectedIds((current) => current.filter((id) => validIds.has(id)));
+  }, [dayContents]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const unlistenPromise = listen("wiki-compile-progress", (event) => {
+      if (cancelled || selectionStatus !== "compiling") return;
+      const payload = event.payload as { current?: number; total?: number; compiled?: number; failed?: number } | string;
+      if (!payload || typeof payload === "string") return;
+      setCompileProgress({
+        current: payload.current ?? 0,
+        total: payload.total ?? selectedIds.length,
+        compiled: payload.compiled ?? 0,
+        failed: payload.failed ?? 0,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [selectionStatus, selectedIds.length]);
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedCount = selectedIds.length;
+  const allSelected = dayContents.length > 0 && selectedCount === dayContents.length;
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((current) =>
+      current.includes(id)
+        ? current.filter((itemId) => itemId !== id)
+        : [...current, id]
+    );
+  };
+
   const handleExportDay = async () => {
     if (!selectedDate) return;
     setIsExporting(true);
@@ -147,6 +206,60 @@ export function DayDetail() {
       console.error("Failed to export:", e);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    setSelectedIds(allSelected ? [] : dayContents.map((item) => item.id));
+  };
+
+  const handleCopySelected = async () => {
+    if (selectedCount === 0) return;
+    setSelectionStatus("copying");
+    try {
+      const markdown = await renderSelectedMarkdown(selectedIds);
+      await navigator.clipboard.writeText(markdown);
+      setSelectionStatus("copied");
+      setTimeout(() => setSelectionStatus("idle"), 2200);
+    } catch (e) {
+      console.error("Failed to copy selected content:", e);
+      setSelectionStatus("idle");
+    }
+  };
+
+  const handleExportSelected = async () => {
+    if (selectedCount === 0) return;
+    setSelectionStatus("exporting");
+    try {
+      await exportSelectedSingle(selectedIds);
+      setSelectionStatus("exported");
+      setTimeout(() => setSelectionStatus("idle"), 2200);
+    } catch (e) {
+      console.error("Failed to export selected content:", e);
+      setSelectionStatus("idle");
+    }
+  };
+
+  const handleCompileSelected = async () => {
+    if (selectedCount === 0) return;
+    setSelectionStatus("compiling");
+    setCompileProgress({ current: 0, total: selectedIds.length, compiled: 0, failed: 0 });
+    try {
+      await compileContentsToWiki(selectedIds);
+      setSelectionStatus("compiled");
+      setCompileProgress((current) =>
+        current
+          ? { ...current, current: current.total, compiled: Math.max(current.compiled, current.total - current.failed) }
+          : null
+      );
+      setTimeout(() => {
+        setSelectionStatus("idle");
+        setCompileProgress(null);
+      }, 2200);
+    } catch (e) {
+      console.error("Failed to compile selected content to wiki:", e);
+      setSelectionStatus("idle");
+      setCompileProgress(null);
     }
   };
 
@@ -185,6 +298,8 @@ export function DayDetail() {
               {t("dayDetail.itemsCount", { count: dayContents.length })}
             </p>
           </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <button
             onClick={handleExportDay}
             disabled={isExporting}
@@ -202,6 +317,77 @@ export function DayDetail() {
             )}
             <span>{t("dayDetail.exportDay")}</span>
           </button>
+          <button
+            onClick={() => {
+              setSelectionMode((current) => !current);
+              setSelectedIds([]);
+              setSelectionStatus("idle");
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border transition-all duration-150
+              ${selectionMode
+                ? "bg-orange-500/12 dark:bg-orange-500/18 border-orange-300/50 dark:border-orange-500/30 text-orange-700 dark:text-orange-400"
+                : "bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08] text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]"
+              }`}
+          >
+            <span>{selectionMode ? "✓" : "☑"}</span>
+            <span>{selectionMode ? t("selection.done") : t("selection.enter")}</span>
+          </button>
+          {selectionMode && (
+            <>
+              <span className="px-2.5 py-1 text-xs rounded-full bg-orange-500/10 dark:bg-orange-500/15 text-orange-700 dark:text-orange-300">
+                {t("selection.count", { count: selectedCount })}
+              </span>
+              <button
+                onClick={handleToggleSelectAll}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border
+                           bg-white/50 dark:bg-white/[0.04] border-white/60 dark:border-white/[0.08]
+                           text-gray-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-white/[0.08]
+                           transition-all duration-150"
+              >
+                {allSelected ? t("selection.clearAll") : t("selection.selectAll")}
+              </button>
+              <button
+                onClick={handleCopySelected}
+                disabled={selectedCount === 0 || selectionStatus === "copying" || selectionStatus === "exporting" || selectionStatus === "compiling"}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border
+                           border-orange-200/50 dark:border-orange-500/20
+                           bg-orange-50/50 dark:bg-orange-500/[0.06]
+                           text-orange-600 dark:text-orange-400
+                           hover:bg-orange-100/50 dark:hover:bg-orange-500/[0.12]
+                           disabled:opacity-50 transition-all duration-150"
+              >
+                {selectionStatus === "copying" ? t("selection.copying") : selectionStatus === "copied" ? t("selection.copied") : t("selection.copySelected")}
+              </button>
+              <button
+                onClick={handleExportSelected}
+                disabled={selectedCount === 0 || selectionStatus === "copying" || selectionStatus === "exporting" || selectionStatus === "compiling"}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border
+                           border-orange-200/50 dark:border-orange-500/20
+                           bg-orange-50/50 dark:bg-orange-500/[0.06]
+                           text-orange-600 dark:text-orange-400
+                           hover:bg-orange-100/50 dark:hover:bg-orange-500/[0.12]
+                           disabled:opacity-50 transition-all duration-150"
+              >
+                {selectionStatus === "exporting" ? t("selection.exporting") : selectionStatus === "exported" ? t("selection.exported") : t("selection.exportSelected")}
+              </button>
+              <button
+                onClick={handleCompileSelected}
+                disabled={selectedCount === 0 || selectionStatus === "copying" || selectionStatus === "exporting" || selectionStatus === "compiling"}
+                className="px-3 py-1.5 text-sm font-medium rounded-lg border
+                           border-orange-200/50 dark:border-orange-500/20
+                           bg-orange-50/50 dark:bg-orange-500/[0.06]
+                           text-orange-600 dark:text-orange-400
+                           hover:bg-orange-100/50 dark:hover:bg-orange-500/[0.12]
+                           disabled:opacity-50 transition-all duration-150"
+              >
+                {selectionStatus === "compiling"
+                  ? `${t("selection.compiling")}${compileProgress?.total ? ` ${compileProgress.current}/${compileProgress.total}` : ""}`
+                  : selectionStatus === "compiled"
+                    ? t("selection.compiled")
+                    : t("selection.addToKnowledge")}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -216,7 +402,14 @@ export function DayDetail() {
           </div>
         ) : (
           groupedContents.map(([type, items]) => (
-            <ContentGroup key={type} type={type} items={items} />
+            <ContentGroup
+              key={type}
+              type={type}
+              items={items}
+              selectionMode={selectionMode}
+              selectedIds={selectedSet}
+              onToggleSelect={toggleSelected}
+            />
           ))
         )}
       </div>

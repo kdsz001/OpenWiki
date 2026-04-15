@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import {
   Palette,
+  BookOpen,
   Bot,
   Camera,
   Link as LinkIcon,
@@ -61,6 +63,13 @@ const LANGUAGE_OPTIONS: { value: LanguageMode; key: string }[] = [
   { value: "en-US", key: "language.en-US" },
 ];
 
+const RADAR_ANALYSIS_DAY_PRESETS = [15, 30, 60, 100, 180, 365];
+const CONCEPT_PROMOTION_PRESETS = {
+  lenient: { minImportancePct: 55, minSources: 2, minDays: 1 },
+  balanced: { minImportancePct: 65, minSources: 2, minDays: 2 },
+  strict: { minImportancePct: 80, minSources: 3, minDays: 3 },
+} as const;
+
 export function SettingsView() {
   const { t } = useTranslation("settings");
   const { t: tUpdate } = useTranslation("update");
@@ -79,6 +88,8 @@ export function SettingsView() {
     sensitiveFilterEnabled,
     urlReadingEnabled,
     radarIntervalDays,
+    radarAnalysisDays,
+    radarAnalysisLimit,
     screenshotDir,
     totalItems,
     diskUsageMB,
@@ -97,6 +108,8 @@ export function SettingsView() {
     setDefaultAction,
     setUrlReadingEnabled,
     setRadarIntervalDays,
+    setRadarAnalysisDays,
+    setRadarAnalysisLimit,
     loadXReaderStatus,
     oauthLoggedIn,
     oauthEmail,
@@ -113,6 +126,9 @@ export function SettingsView() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [draftApiKey, setDraftApiKey] = useState<string | null>(null);
   const [apiKeySaved, setApiKeySaved] = useState(false);
+  const [customRadarAnalysisDays, setCustomRadarAnalysisDays] = useState(() =>
+    radarAnalysisDays > 0 ? String(radarAnalysisDays) : "100"
+  );
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testMessage, setTestMessage] = useState("");
   // MCP connection state per target
@@ -129,6 +145,12 @@ export function SettingsView() {
   });
   const [summaryCopied, setSummaryCopied] = useState(false);
   const [mcpGlobalError, setMcpGlobalError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (radarAnalysisDays > 0) {
+      setCustomRadarAnalysisDays(String(radarAnalysisDays));
+    }
+  }, [radarAnalysisDays]);
 
   const updateMcpTarget = (id: McpTargetId, update: Partial<McpTargetState>) => {
     setMcpStates((prev) => ({ ...prev, [id]: { ...prev[id], ...update } }));
@@ -186,6 +208,7 @@ export function SettingsView() {
     { id: "appearance", label: t("sections.appearance"), icon: Palette },
     { id: "capture", label: t("sections.capture"), icon: Camera },
     { id: "radar", label: t("sections.insights"), icon: Target },
+    { id: "wiki", label: t("sections.wiki"), icon: BookOpen },
     { id: "ai", label: t("sections.ai"), icon: Bot },
     { id: "connect", label: t("sections.connection"), icon: LinkIcon },
     { id: "storage", label: t("sections.storage"), icon: HardDrive },
@@ -193,6 +216,12 @@ export function SettingsView() {
     { id: "diagnostics", label: tAuto("settings.sectionTitle"), icon: Stethoscope },
   ];
   const [activeCategory, setActiveCategory] = useState("appearance");
+  const analysisDaysMode =
+    radarAnalysisDays === 0
+      ? "all"
+      : RADAR_ANALYSIS_DAY_PRESETS.includes(radarAnalysisDays)
+        ? String(radarAnalysisDays)
+        : "custom";
 
   // ===== Automation permission state =====
   const [automationSnapshot, setAutomationSnapshot] =
@@ -533,6 +562,84 @@ export function SettingsView() {
                 <option value={30}>{t("insights.intervalMonthly")}</option>
               </select>
             </SettingRow>
+            <SettingRow label={t("insights.analysisDays")} desc={t("insights.analysisDaysDesc")}>
+              <div className="flex flex-col items-end gap-2">
+                <select
+                  value={analysisDaysMode}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (next === "all") {
+                      setRadarAnalysisDays(0);
+                      return;
+                    }
+                    if (next === "custom") {
+                      const customSeed = Number(customRadarAnalysisDays);
+                      const seed = radarAnalysisDays > 0
+                        ? radarAnalysisDays
+                        : Number.isInteger(customSeed) && customSeed > 0
+                          ? customSeed
+                          : 100;
+                      setCustomRadarAnalysisDays(String(seed));
+                      setRadarAnalysisDays(seed);
+                      return;
+                    }
+                    setRadarAnalysisDays(Number(next));
+                  }}
+                  className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+                >
+                  {RADAR_ANALYSIS_DAY_PRESETS.map((days) => (
+                    <option key={days} value={days}>{t("insights.analysisDaysValue", { count: days })}</option>
+                  ))}
+                  <option value="custom">{t("insights.analysisDaysCustom")}</option>
+                  <option value="all">{t("insights.analysisDaysUnlimited")}</option>
+                </select>
+                {analysisDaysMode === "custom" && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      inputMode="numeric"
+                      value={customRadarAnalysisDays}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setCustomRadarAnalysisDays(value);
+                        const parsed = Number(value);
+                        if (Number.isInteger(parsed) && parsed > 0) {
+                          setRadarAnalysisDays(parsed);
+                        }
+                      }}
+                      onBlur={() => {
+                        const parsed = Number(customRadarAnalysisDays);
+                        if (!Number.isInteger(parsed) || parsed <= 0) {
+                          const fallback = radarAnalysisDays > 0 ? radarAnalysisDays : 100;
+                          setCustomRadarAnalysisDays(String(fallback));
+                          setRadarAnalysisDays(fallback);
+                        }
+                      }}
+                      placeholder={t("insights.analysisDaysCustomPlaceholder")}
+                      className="w-28 text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+                    />
+                    <span className="text-xs text-gray-500 dark:text-slate-400">
+                      {t("insights.analysisDaysCustomSuffix")}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </SettingRow>
+            <SettingRow label={t("insights.analysisLimit")} desc={t("insights.analysisLimitDesc")}>
+              <select
+                value={radarAnalysisLimit}
+                onChange={(e) => setRadarAnalysisLimit(Number(e.target.value))}
+                className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+              >
+                {[100, 300, 500, 1000, 0].map((limit) => (
+                  <option key={limit} value={limit}>
+                    {limit === 0 ? t("insights.analysisLimitUnlimited") : t("insights.analysisLimitValue", { count: limit })}
+                  </option>
+                ))}
+              </select>
+            </SettingRow>
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-600 mt-3 px-1">
             {t("insights.hint")}
@@ -863,6 +970,9 @@ export function SettingsView() {
           <ExportSection totalItems={totalItems} />
         </div>
       )}
+
+      {/* ===== Wiki ===== */}
+      {activeCategory === "wiki" && <WikiSettingsSection />}
 
       {/* ===== About / Update ===== */}
       {activeCategory === "about" && (
@@ -1245,18 +1355,81 @@ function ExportSection({ totalItems }: { totalItems: number }) {
         </div>
       )}
 
-      {/* Wiki settings */}
-      <WikiSettingsSection />
     </div>
   );
 }
 
 function WikiSettingsSection() {
   const { t } = useTranslation("settings");
+  const storageMode = useSettingsStore((s) => s.storageMode);
+  const reopenWorkspaceSetup = useSettingsStore((s) => s.reopenWorkspaceSetup);
   const [stats, setStats] = useState<{ total_pages: number; total_edges: number; total_sources: number } | null>(null);
   const [autoCompile, setAutoCompile] = useState(true);
   const [compiling, setCompiling] = useState(false);
   const [compileResult, setCompileResult] = useState("");
+  const [compileProgress, setCompileProgress] = useState<{ current: number; total: number; compiled: number; skipped: number; errors: number; up_to_date: number } | null>(null);
+  const [conceptMinImportancePct, setConceptMinImportancePct] = useState<number>(
+    CONCEPT_PROMOTION_PRESETS.balanced.minImportancePct
+  );
+  const [conceptMinSources, setConceptMinSources] = useState<number>(
+    CONCEPT_PROMOTION_PRESETS.balanced.minSources
+  );
+  const [conceptMinDays, setConceptMinDays] = useState<number>(
+    CONCEPT_PROMOTION_PRESETS.balanced.minDays
+  );
+  const [localWikiPath, setLocalWikiPath] = useState("");
+  const [syncingLocalWiki, setSyncingLocalWiki] = useState(false);
+  const [localWikiSyncResult, setLocalWikiSyncResult] = useState("");
+  const [localRawPath, setLocalRawPath] = useState("");
+  const [syncingLocalRaw, setSyncingLocalRaw] = useState(false);
+  const [localRawSyncResult, setLocalRawSyncResult] = useState("");
+  const [workspaceRoot, setWorkspaceRoot] = useState("");
+  const [workspaceSummary, setWorkspaceSummary] = useState<{ inbox: string; raw: string; wiki: string; insights: string } | null>(null);
+  const [initializingWorkspace, setInitializingWorkspace] = useState(false);
+  const [workspaceResult, setWorkspaceResult] = useState("");
+
+  const detectConceptPreset = (
+    importancePct: number,
+    minSources: number,
+    minDays: number,
+  ): "lenient" | "balanced" | "strict" | "custom" => {
+    for (const [preset, config] of Object.entries(CONCEPT_PROMOTION_PRESETS) as Array<
+      ["lenient" | "balanced" | "strict", { minImportancePct: number; minSources: number; minDays: number }]
+    >) {
+      if (
+        config.minImportancePct === importancePct &&
+        config.minSources === minSources &&
+        config.minDays === minDays
+      ) {
+        return preset;
+      }
+    }
+    return "custom";
+  };
+
+  const conceptPreset = detectConceptPreset(
+    conceptMinImportancePct,
+    conceptMinSources,
+    conceptMinDays,
+  );
+  const storageModeLabelKey =
+    storageMode === "connected"
+      ? "workspaceSetup.modeConnectedTitle"
+      : storageMode === "hybrid"
+        ? "workspaceSetup.modeHybridTitle"
+        : "workspaceSetup.modeManagedTitle";
+
+  const persistConceptPolicy = useCallback(
+    async (importancePct: number, minSources: number, minDays: number) => {
+      const { updateSetting } = await import("../../services/settingsService");
+      await Promise.all([
+        updateSetting("wiki_concept_min_importance", String((importancePct / 100).toFixed(2))),
+        updateSetting("wiki_concept_min_sources", String(minSources)),
+        updateSetting("wiki_concept_min_days", String(minDays)),
+      ]);
+    },
+    [],
+  );
 
   useEffect(() => {
     import("../../services/wikiService").then(async (ws) => {
@@ -1269,6 +1442,29 @@ function WikiSettingsSection() {
       try {
         const settings = await ss.getSettings();
         setAutoCompile(settings.wiki_auto_compile !== "false");
+        const minImportance = Math.round(
+          (Number.parseFloat(settings.wiki_concept_min_importance || "0.65") || 0.65) * 100
+        );
+        const minSources = Number.parseInt(settings.wiki_concept_min_sources || "2", 10);
+        const minDays = Number.parseInt(settings.wiki_concept_min_days || "2", 10);
+        setLocalWikiPath(settings.wiki_local_source_path || "");
+        setLocalRawPath(settings.wiki_raw_source_path || "");
+        setWorkspaceRoot(settings.workspace_root || "");
+        setConceptMinImportancePct(Math.min(95, Math.max(40, minImportance)));
+        setConceptMinSources(Math.min(6, Math.max(1, minSources)));
+        setConceptMinDays(Math.min(14, Math.max(1, minDays)));
+      } catch {}
+    });
+    import("../../services/workspaceService").then(async (ws) => {
+      try {
+        const paths = await ws.getWorkspacePaths();
+        setWorkspaceSummary({
+          inbox: paths.inbox,
+          raw: paths.raw,
+          wiki: paths.wiki_root,
+          insights: paths.insights,
+        });
+        setWorkspaceRoot((current) => current || paths.root);
       } catch {}
     });
   }, []);
@@ -1287,19 +1483,24 @@ function WikiSettingsSection() {
   const handleBatchCompile = async () => {
     setCompiling(true);
     setCompileResult("");
+    setCompileProgress(null);
     try {
       const { triggerWikiAutoCompile } = await import("../../services/wikiService");
       const result = await triggerWikiAutoCompile();
-      if (result.errors > 0) {
+      if (result.processed === 0 && result.up_to_date > 0 && result.errors === 0) {
+        setCompileResult(t("wiki.compileAlreadyFresh", { upToDate: result.up_to_date }));
+      } else if (result.errors > 0) {
         setCompileResult(t("wiki.compileResultWithErrors", {
           processed: result.processed,
           compiled: result.compiled,
           errors: result.errors,
+          upToDate: result.up_to_date,
         }));
       } else {
         setCompileResult(t("wiki.compileResult", {
           processed: result.processed,
           compiled: result.compiled,
+          upToDate: result.up_to_date,
         }));
       }
       // Refresh stats
@@ -1310,6 +1511,102 @@ function WikiSettingsSection() {
     }
     setCompiling(false);
   };
+
+  const handleSyncLocalWiki = async () => {
+    const trimmedPath = localWikiPath.trim();
+    if (!trimmedPath) return;
+    setSyncingLocalWiki(true);
+    setLocalWikiSyncResult("");
+    try {
+      const { updateSetting } = await import("../../services/settingsService");
+      await updateSetting("wiki_local_source_path", trimmedPath);
+      const { syncLocalWiki, getWikiStats } = await import("../../services/wikiService");
+      const result = await syncLocalWiki(trimmedPath);
+      setLocalWikiSyncResult(t("wiki.localWikiSyncResult", {
+        pages: result.pages_found,
+        created: result.created,
+        updated: result.updated,
+        removed: result.removed,
+        edges: result.edges_created,
+      }));
+      setStats(await getWikiStats());
+    } catch (error) {
+      setLocalWikiSyncResult(t("wiki.localWikiSyncFailed", { error: String(error) }));
+    }
+    setSyncingLocalWiki(false);
+  };
+
+  const handleSyncLocalRaw = async () => {
+    const trimmedPath = localRawPath.trim();
+    if (!trimmedPath) return;
+    setSyncingLocalRaw(true);
+    setLocalRawSyncResult("");
+    try {
+      const { updateSetting } = await import("../../services/settingsService");
+      await updateSetting("wiki_raw_source_path", trimmedPath);
+      const { syncLocalRawDirectory } = await import("../../services/dataHubService");
+      const result = await syncLocalRawDirectory(trimmedPath);
+      setLocalRawSyncResult(t("wiki.localRawSyncResult", {
+        files: result.files_found,
+        created: result.created,
+        updated: result.updated,
+        skipped: result.skipped,
+        removed: result.removed,
+      }));
+    } catch (error) {
+      setLocalRawSyncResult(t("wiki.localRawSyncFailed", { error: String(error) }));
+    }
+    setSyncingLocalRaw(false);
+  };
+
+  const handleInitializeWorkspace = async () => {
+    setInitializingWorkspace(true);
+    setWorkspaceResult("");
+    try {
+      const { initializeWorkspaceRoot } = await import("../../services/workspaceService");
+      const paths = await initializeWorkspaceRoot(workspaceRoot.trim());
+      setWorkspaceRoot(paths.root);
+      setWorkspaceSummary({
+        inbox: paths.inbox,
+        raw: paths.raw,
+        wiki: paths.wiki_root,
+        insights: paths.insights,
+      });
+      setWorkspaceResult(t("wiki.workspaceReady", { path: paths.root }));
+    } catch (error) {
+      setWorkspaceResult(t("wiki.workspaceInitFailed", { error: String(error) }));
+    }
+    setInitializingWorkspace(false);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const unlistenPromise = listen("wiki-auto-compile-progress", (event) => {
+      if (cancelled || !compiling) return;
+      const payload = event.payload as {
+        current?: number;
+        total?: number;
+        compiled?: number;
+        skipped?: number;
+        errors?: number;
+        up_to_date?: number;
+      } | string;
+      if (!payload || typeof payload === "string") return;
+      setCompileProgress({
+        current: payload.current ?? 0,
+        total: payload.total ?? 0,
+        compiled: payload.compiled ?? 0,
+        skipped: payload.skipped ?? 0,
+        errors: payload.errors ?? 0,
+        up_to_date: payload.up_to_date ?? 0,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unlistenPromise.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, [compiling]);
 
   return (
     <div className="px-5 py-4 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
@@ -1341,6 +1638,23 @@ function WikiSettingsSection() {
         </div>
       )}
 
+      <SettingRow
+        label={t("wiki.workspaceMode")}
+        desc={t("wiki.workspaceModeDesc")}
+      >
+        <div className="flex items-center gap-3">
+          <span className="rounded-full bg-orange-500/10 px-3 py-1 text-xs font-medium text-orange-500">
+            {t(storageModeLabelKey)}
+          </span>
+          <button
+            onClick={() => reopenWorkspaceSetup().catch((error) => console.error("Failed to reopen workspace setup:", error))}
+            className="text-xs font-medium text-orange-500 transition hover:text-orange-600"
+          >
+            {t("wiki.reopenSetup")}
+          </button>
+        </div>
+      </SettingRow>
+
       {/* Auto compile toggle */}
       <div className="flex items-center justify-between py-2">
         <div>
@@ -1359,6 +1673,272 @@ function WikiSettingsSection() {
         </button>
       </div>
 
+      <div className="mt-4 pt-4 border-t" style={{ borderColor: "var(--color-border, #E7E5E4)" }}>
+        <div className="mb-3">
+          <p style={{ fontSize: 13, fontWeight: 500, color: "var(--color-text-primary)" }}>
+            {t("wiki.conceptPolicy")}
+          </p>
+          <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+            {t("wiki.conceptPolicyDesc")}
+          </p>
+        </div>
+
+        <SettingRow label={t("wiki.conceptPreset")}>
+          <select
+            value={conceptPreset}
+            onChange={async (e) => {
+              const next = e.target.value as "lenient" | "balanced" | "strict" | "custom";
+              if (next === "custom") return;
+              const config = CONCEPT_PROMOTION_PRESETS[next];
+              setConceptMinImportancePct(config.minImportancePct);
+              setConceptMinSources(config.minSources);
+              setConceptMinDays(config.minDays);
+              try {
+                await persistConceptPolicy(
+                  config.minImportancePct,
+                  config.minSources,
+                  config.minDays,
+                );
+              } catch (error) {
+                console.error("Failed to save concept preset:", error);
+              }
+            }}
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          >
+            <option value="lenient">{t("wiki.conceptPresetLenient")}</option>
+            <option value="balanced">{t("wiki.conceptPresetBalanced")}</option>
+            <option value="strict">{t("wiki.conceptPresetStrict")}</option>
+            <option value="custom">{t("wiki.conceptPresetCustom")}</option>
+          </select>
+        </SettingRow>
+
+        <SettingRow
+          label={t("wiki.conceptMinImportance")}
+          desc={t("wiki.conceptMinImportanceDesc", { count: conceptMinImportancePct })}
+        >
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={40}
+              max={95}
+              step={5}
+              value={conceptMinImportancePct}
+              onChange={async (e) => {
+                const next = Number(e.target.value);
+                setConceptMinImportancePct(next);
+                try {
+                  await persistConceptPolicy(next, conceptMinSources, conceptMinDays);
+                } catch (error) {
+                  console.error("Failed to save concept importance threshold:", error);
+                }
+              }}
+              className="w-36 accent-orange-500"
+            />
+            <span className="w-12 text-right text-sm text-gray-600 dark:text-slate-300">
+              {conceptMinImportancePct}%
+            </span>
+          </div>
+        </SettingRow>
+
+        <SettingRow
+          label={t("wiki.conceptMinSources")}
+          desc={t("wiki.conceptMinSourcesDesc")}
+        >
+          <select
+            value={conceptMinSources}
+            onChange={async (e) => {
+              const next = Number(e.target.value);
+              setConceptMinSources(next);
+              try {
+                await persistConceptPolicy(conceptMinImportancePct, next, conceptMinDays);
+              } catch (error) {
+                console.error("Failed to save concept source threshold:", error);
+              }
+            }}
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          >
+            {[1, 2, 3, 4, 5, 6].map((value) => (
+              <option key={value} value={value}>
+                {t("wiki.conceptMinSourcesValue", { count: value })}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+
+        <SettingRow
+          label={t("wiki.conceptMinDays")}
+          desc={t("wiki.conceptMinDaysDesc")}
+        >
+          <select
+            value={conceptMinDays}
+            onChange={async (e) => {
+              const next = Number(e.target.value);
+              setConceptMinDays(next);
+              try {
+                await persistConceptPolicy(conceptMinImportancePct, conceptMinSources, next);
+              } catch (error) {
+                console.error("Failed to save concept day threshold:", error);
+              }
+            }}
+            className="text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          >
+            {[1, 2, 3, 5, 7, 14].map((value) => (
+              <option key={value} value={value}>
+                {t("wiki.conceptMinDaysValue", { count: value })}
+              </option>
+            ))}
+          </select>
+        </SettingRow>
+
+        <SettingRow
+          label={t("wiki.workspaceRoot")}
+          desc={t("wiki.workspaceRootDesc")}
+        >
+          <input
+            value={workspaceRoot}
+            onChange={(e) => setWorkspaceRoot(e.target.value)}
+            onBlur={async () => {
+              if (!workspaceRoot.trim()) return;
+              try {
+                const { updateSetting } = await import("../../services/settingsService");
+                await updateSetting("workspace_root", workspaceRoot.trim());
+              } catch (error) {
+                console.error("Failed to save workspace root:", error);
+              }
+            }}
+            placeholder="~/Documents/OpenWiki Workspace"
+            className="w-72 text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          />
+        </SettingRow>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <button
+            onClick={handleInitializeWorkspace}
+            disabled={initializingWorkspace}
+            className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+            style={{
+              backgroundColor: "#F9731615",
+              color: "#F97316",
+              border: "1px solid #F9731630",
+            }}
+          >
+            {initializingWorkspace ? t("wiki.workspaceInitializing") : t("wiki.workspaceInitialize")}
+          </button>
+          <button
+            onClick={async () => {
+              try {
+                const { openWorkspaceRoot } = await import("../../services/workspaceService");
+                await openWorkspaceRoot();
+              } catch (error) {
+                setWorkspaceResult(t("wiki.workspaceInitFailed", { error: String(error) }));
+              }
+            }}
+            className="px-4 py-2 rounded-lg text-xs font-medium transition-all"
+            style={{
+              backgroundColor: "#FFFFFF",
+              color: "#F97316",
+              border: "1px solid #F9731630",
+            }}
+          >
+            {t("wiki.workspaceOpen")}
+          </button>
+          {workspaceResult && (
+            <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+              {workspaceResult}
+            </p>
+          )}
+        </div>
+
+        {workspaceSummary && (
+          <div className="mt-3 rounded-xl border border-orange-200/50 bg-orange-50/40 px-4 py-3 text-[11px] leading-5 text-gray-600 dark:border-orange-400/20 dark:bg-orange-500/5 dark:text-slate-300">
+            <p>{t("wiki.workspaceMappedTo", { path: workspaceSummary.inbox })}</p>
+            <p>{t("wiki.workspaceMappedRaw", { path: workspaceSummary.raw })}</p>
+            <p>{t("wiki.workspaceMappedWiki", { path: workspaceSummary.wiki })}</p>
+            <p>{t("wiki.workspaceMappedInsights", { path: workspaceSummary.insights })}</p>
+          </div>
+        )}
+
+        <SettingRow
+          label={t("wiki.localWikiPath")}
+          desc={t("wiki.localWikiPathDesc")}
+        >
+          <input
+            value={localWikiPath}
+            onChange={(e) => setLocalWikiPath(e.target.value)}
+            onBlur={async () => {
+              try {
+                const { updateSetting } = await import("../../services/settingsService");
+                await updateSetting("wiki_local_source_path", localWikiPath.trim());
+              } catch (error) {
+                console.error("Failed to save local wiki path:", error);
+              }
+            }}
+            placeholder="/path/to/知识库"
+            className="w-72 text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          />
+        </SettingRow>
+
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={handleSyncLocalWiki}
+            disabled={syncingLocalWiki || !localWikiPath.trim()}
+            className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+            style={{
+              backgroundColor: "#F9731615",
+              color: "#F97316",
+              border: "1px solid #F9731630",
+            }}
+          >
+            {syncingLocalWiki ? t("wiki.localWikiSyncing") : t("wiki.localWikiSync")}
+          </button>
+          {localWikiSyncResult && (
+            <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+              {localWikiSyncResult}
+            </p>
+          )}
+        </div>
+
+        <SettingRow
+          label={t("wiki.localRawPath")}
+          desc={t("wiki.localRawPathDesc")}
+        >
+          <input
+            value={localRawPath}
+            onChange={(e) => setLocalRawPath(e.target.value)}
+            onBlur={async () => {
+              try {
+                const { updateSetting } = await import("../../services/settingsService");
+                await updateSetting("wiki_raw_source_path", localRawPath.trim());
+              } catch (error) {
+                console.error("Failed to save local raw path:", error);
+              }
+            }}
+            placeholder="/path/to/raw/个人档案"
+            className="w-72 text-sm rounded-lg px-3 py-1.5 bg-white/40 dark:bg-white/[0.06] border border-gray-200/50 dark:border-white/[0.08] text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-1 focus:ring-orange-400/50"
+          />
+        </SettingRow>
+
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={handleSyncLocalRaw}
+            disabled={syncingLocalRaw || !localRawPath.trim()}
+            className="px-4 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+            style={{
+              backgroundColor: "#F9731615",
+              color: "#F97316",
+              border: "1px solid #F9731630",
+            }}
+          >
+            {syncingLocalRaw ? t("wiki.localRawSyncing") : t("wiki.localRawSync")}
+          </button>
+          {localRawSyncResult && (
+            <p style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+              {localRawSyncResult}
+            </p>
+          )}
+        </div>
+      </div>
+
       {/* Batch compile button */}
       <div className="mt-3">
         <button
@@ -1371,8 +1951,15 @@ function WikiSettingsSection() {
             border: "1px solid #F9731630",
           }}
         >
-          {compiling ? t("wiki.compiling") : t("wiki.batchCompile")}
+          {compiling
+            ? `${t("wiki.compiling")}${compileProgress?.total ? ` ${compileProgress.current}/${compileProgress.total}` : ""}`
+            : t("wiki.batchCompile")}
         </button>
+        {compiling && compileProgress && (
+          <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+            {`待处理 ${compileProgress.current}/${compileProgress.total} · 已编译 ${compileProgress.compiled} · 跳过 ${compileProgress.skipped} · 错误 ${compileProgress.errors} · 已是最新 ${compileProgress.up_to_date}`}
+          </p>
+        )}
         {compileResult && (
           <p className="mt-2" style={{ fontSize: 11, color: "var(--color-text-secondary)" }}>
             {compileResult}

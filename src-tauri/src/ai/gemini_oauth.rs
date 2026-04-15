@@ -25,8 +25,7 @@ use crate::storage::repository::Repository;
 // These are public OAuth client credentials for a desktop/installed application.
 // Google considers these non-confidential for native apps (see Google OAuth docs).
 // They identify the app to Google so users can authorize via browser redirect.
-const CLIENT_ID: &str =
-    "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const CLIENT_ID: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
 const CLIENT_SECRET: &str = "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";
 
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -108,13 +107,11 @@ async fn wait_for_callback() -> Result<(String, String), String> {
         CALLBACK_PORT
     );
 
-    let (stream, _addr) = tokio::time::timeout(
-        std::time::Duration::from_secs(180),
-        listener.accept(),
-    )
-    .await
-    .map_err(|_| "等待授权超时（180秒），请重试".to_string())?
-    .map_err(|e| format!("Failed to accept connection: {}", e))?;
+    let (stream, _addr) =
+        tokio::time::timeout(std::time::Duration::from_secs(180), listener.accept())
+            .await
+            .map_err(|_| "等待授权超时（180秒），请重试".to_string())?
+            .map_err(|e| format!("Failed to accept connection: {}", e))?;
 
     let (reader_half, writer_half) = stream.into_split();
     let mut reader = BufReader::new(reader_half);
@@ -243,7 +240,10 @@ struct TokenResponse {
 }
 
 /// Exchange an authorization code for tokens (includes client_secret for Google).
-async fn exchange_code(code: &str, verifier: &str) -> Result<(String, Option<String>, i64), String> {
+async fn exchange_code(
+    code: &str,
+    verifier: &str,
+) -> Result<(String, Option<String>, i64), String> {
     let client = reqwest::Client::new();
     let body = format!(
         "client_id={}&client_secret={}&code={}&grant_type=authorization_code&redirect_uri={}&code_verifier={}",
@@ -280,7 +280,11 @@ async fn exchange_code(code: &str, verifier: &str) -> Result<(String, Option<Str
     let expires_in = token_resp.expires_in.unwrap_or(3600);
     let expires_at = chrono::Utc::now().timestamp() + expires_in;
 
-    Ok((token_resp.access_token, token_resp.refresh_token, expires_at))
+    Ok((
+        token_resp.access_token,
+        token_resp.refresh_token,
+        expires_at,
+    ))
 }
 
 /// Refresh an access token using the stored refresh_token (includes client_secret).
@@ -320,10 +324,14 @@ pub async fn refresh_gemini_token(refresh: &str) -> Result<GeminiOAuthToken, Str
     let expires_at = chrono::Utc::now().timestamp() + expires_in;
 
     // For refresh, we keep the existing refresh_token if none returned
-    let new_refresh = token_resp.refresh_token.unwrap_or_else(|| refresh.to_string());
+    let new_refresh = token_resp
+        .refresh_token
+        .unwrap_or_else(|| refresh.to_string());
 
     // Fetch user email and project_id with the new access token
-    let email = fetch_user_email(&token_resp.access_token).await.unwrap_or_default();
+    let email = fetch_user_email(&token_resp.access_token)
+        .await
+        .unwrap_or_default();
     let project_id = fetch_project_id(&token_resp.access_token)
         .await
         .unwrap_or_else(|| DEFAULT_PROJECT_ID.to_string());
@@ -454,9 +462,7 @@ pub async fn start_gemini_oauth_login() -> Result<GeminiOAuthToken, String> {
     let refresh_token = refresh_token_opt.unwrap_or_default();
 
     // Fetch email and project_id
-    let email = fetch_user_email(&access_token)
-        .await
-        .unwrap_or_default();
+    let email = fetch_user_email(&access_token).await.unwrap_or_default();
     let project_id = fetch_project_id(&access_token)
         .await
         .unwrap_or_else(|| DEFAULT_PROJECT_ID.to_string());

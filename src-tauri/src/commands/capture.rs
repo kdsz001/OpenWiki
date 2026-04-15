@@ -223,6 +223,13 @@ pub fn save_content_auto(
     };
 
     repo.save_content(&content).map_err(|e| e.to_string())?;
+    if let Err(e) = crate::workspace::sync_content_to_workspace_inbox(&repo, &content) {
+        log::warn!(
+            "Failed to mirror content {} into workspace inbox: {}",
+            id,
+            e
+        );
+    }
 
     log::info!(
         "Content auto-saved: {} (type={}, size={} bytes)",
@@ -333,6 +340,13 @@ pub fn save_spotlight_content(
         repo.update_user_note(&content.id, note_text)
             .map_err(|e| format!("Failed to save user note: {}", e))?;
         content.user_note = Some(note_text.clone());
+        if let Err(e) = crate::workspace::sync_content_to_workspace_inbox(&repo, &content) {
+            log::warn!(
+                "Failed to refresh workspace inbox note for {}: {}",
+                content.id,
+                e
+            );
+        }
     }
 
     Ok(content)
@@ -394,6 +408,13 @@ pub fn confirm_capture(
             } else {
                 content.user_note = Some(note.to_string());
                 log::info!("User note saved for {}: {}", content.id, note);
+                if let Err(e) = crate::workspace::sync_content_to_workspace_inbox(&repo, &content) {
+                    log::warn!(
+                        "Failed to refresh workspace inbox note for {}: {}",
+                        content.id,
+                        e
+                    );
+                }
             }
         }
     }
@@ -507,6 +528,17 @@ pub async fn retry_url_fetch(
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
                     log::error!("Failed to update URL content on retry: {}", e);
                 } else {
+                    if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                        if let Err(e) =
+                            crate::workspace::sync_content_to_workspace_inbox(&repo, &updated)
+                        {
+                            log::warn!(
+                                "Failed to refresh workspace inbox note after URL retry for {}: {}",
+                                content_id,
+                                e
+                            );
+                        }
+                    }
                     log::info!(
                         "URL retry succeeded for {}: {} chars",
                         content_id,
@@ -586,6 +618,15 @@ pub async fn ocr_image(state: State<'_, AppState>, content_id: String) -> Result
     // Save OCR text to database
     repo.update_raw_text(&content_id, &text)
         .map_err(|e| format!("Failed to save OCR text: {}", e))?;
+    if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+        if let Err(e) = crate::workspace::sync_content_to_workspace_inbox(&repo, &updated) {
+            log::warn!(
+                "Failed to refresh workspace inbox note after OCR for {}: {}",
+                content_id,
+                e
+            );
+        }
+    }
 
     log::info!("[OCR] Saved {} chars for {}", text.len(), content_id);
     Ok(text)
@@ -628,6 +669,17 @@ fn spawn_auto_ocr(app: &tauri::AppHandle, db: &Arc<Database>, content: &Captured
                 if let Err(e) = repo.update_raw_text(&content_id, &text) {
                     log::error!("[OCR] Failed to save: {}", e);
                 } else {
+                    if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                        if let Err(e) =
+                            crate::workspace::sync_content_to_workspace_inbox(&repo, &updated)
+                        {
+                            log::warn!(
+                                "[OCR] Failed to refresh workspace inbox note for {}: {}",
+                                content_id,
+                                e
+                            );
+                        }
+                    }
                     log::info!(
                         "[OCR] Auto-OCR done for {}: {} chars",
                         content_id,
@@ -692,6 +744,17 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
                     log::error!("Failed to update URL content: {}", e);
                 } else {
+                    if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                        if let Err(e) =
+                            crate::workspace::sync_content_to_workspace_inbox(&repo, &updated)
+                        {
+                            log::warn!(
+                                "Failed to refresh workspace inbox note after URL fetch for {}: {}",
+                                content_id,
+                                e
+                            );
+                        }
+                    }
                     log::info!(
                         "URL fetched for {}: {} chars",
                         content_id,
@@ -751,7 +814,8 @@ pub fn spawn_summary_task(
         let repo = crate::storage::repository::Repository::new(db.clone());
 
         // Helper: trigger wiki auto-compile after summary is saved
-        let maybe_wiki_compile = |db_ref: std::sync::Arc<crate::storage::database::Database>, cid: String| {
+        let maybe_wiki_compile = |db_ref: std::sync::Arc<crate::storage::database::Database>,
+                                  cid: String| {
             let wiki_auto = crate::storage::repository::Repository::new(db_ref.clone())
                 .get_setting("wiki_auto_compile")
                 .ok()
@@ -857,6 +921,14 @@ pub fn spawn_summary_task(
                                 &tags_str,
                                 &digest,
                             );
+                            if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                                let _ = crate::workspace::sync_content_to_workspace_inbox(
+                                    &repo, &updated,
+                                );
+                                let _ = crate::workspace::sync_content_to_workspace_raw(
+                                    &repo, &updated,
+                                );
+                            }
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
                             log::info!(
@@ -866,38 +938,61 @@ pub fn spawn_summary_task(
                                 summary
                             );
                         }
-                        return;
                     }
                     Err(e) => {
-                        log::warn!("Codex OAuth failed, falling back to API Key: {}", e);
-                        // Fall through to API key path below
+                        log::warn!("Codex OAuth summary failed for {}: {}", content_id, e);
                     }
                 }
+                return;
             }
         }
 
         // Try Gemini OAuth if provider is google
         if provider_str == "google" {
             if let Some(result) = crate::ai::attention_analyzer::try_gemini_call(
-                db.clone(), "", &prompt, 0.5, false, // summary, not deep analysis
-            ).await {
+                db.clone(),
+                "",
+                &prompt,
+                0.5,
+                false, // summary, not deep analysis
+            )
+            .await
+            {
                 match result {
                     Ok(raw) => {
                         log::info!("Gemini OAuth summary generated for {}", content_id);
                         let (summary, tags, digest) = extract_summary_tags_digest(&raw);
                         if !summary.is_empty() {
                             let tags_str = tags.join(",");
-                            let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
+                            let _ = repo.update_summary_and_tags(
+                                &content_id,
+                                &summary,
+                                &tags_str,
+                                &digest,
+                            );
+                            if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                                let _ = crate::workspace::sync_content_to_workspace_inbox(
+                                    &repo, &updated,
+                                );
+                                let _ = crate::workspace::sync_content_to_workspace_raw(
+                                    &repo, &updated,
+                                );
+                            }
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
-                            log::info!("Summary generated for {}: [{}] {}", content_id, tags_str, summary);
+                            log::info!(
+                                "Summary generated for {}: [{}] {}",
+                                content_id,
+                                tags_str,
+                                summary
+                            );
                         }
-                        return;
                     }
                     Err(e) => {
-                        log::warn!("Gemini OAuth failed, falling back to API Key: {}", e);
+                        log::warn!("Gemini OAuth summary failed for {}: {}", content_id, e);
                     }
                 }
+                return;
             }
         }
 
@@ -917,6 +1012,10 @@ pub fn spawn_summary_task(
                 if !summary.is_empty() {
                     let tags_str = tags.join(",");
                     let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
+                    if let Ok(Some(updated)) = repo.get_content_by_id(&content_id) {
+                        let _ = crate::workspace::sync_content_to_workspace_inbox(&repo, &updated);
+                        let _ = crate::workspace::sync_content_to_workspace_raw(&repo, &updated);
+                    }
                     let _ = app.emit("content-summary-ready", &content_id);
                     maybe_wiki_compile(db.clone(), content_id.clone());
                     log::info!(
@@ -1037,40 +1136,50 @@ pub fn spawn_clean_content_task(
             .or_else(|| repo.get_setting("ai_api_key").ok().flatten())
             .unwrap_or_default();
 
+        if provider_str == "openai" {
+            if let Some(result) = crate::ai::attention_analyzer::try_codex_call(
+                db.clone(),
+                "You extract article body from noisy webpage text. Output clean Markdown only.",
+                &build_clean_prompt(&raw_text, &locale),
+                0.3,
+                false,
+            )
+            .await
+            {
+                match result {
+                    Ok(cleaned) => {
+                        save_clean_content(db.clone(), &repo, &app, &content_id, &cleaned);
+                    }
+                    Err(e) => {
+                        log::warn!("Codex OAuth clean-content failed for {}: {}", content_id, e);
+                    }
+                }
+                return;
+            }
+        }
+        if provider_str == "google" {
+            if let Some(result) = crate::ai::attention_analyzer::try_gemini_call(
+                db.clone(),
+                "You extract article body from noisy webpage text. Output clean Markdown only.",
+                &build_clean_prompt(&raw_text, &locale),
+                0.3,
+                false,
+            )
+            .await
+            {
+                match result {
+                    Ok(cleaned) => {
+                        save_clean_content(db.clone(), &repo, &app, &content_id, &cleaned);
+                    }
+                    Err(e) => {
+                        log::warn!("Gemini OAuth clean-content failed for {}: {}", content_id, e);
+                    }
+                }
+                return;
+            }
+        }
+
         if api_key.is_empty() {
-            // Try OAuth paths
-            if provider_str == "openai" {
-                if let Some(result) = crate::ai::attention_analyzer::try_codex_call(
-                    db.clone(),
-                    "You extract article body from noisy webpage text. Output clean Markdown only.",
-                    &build_clean_prompt(&raw_text, &locale),
-                    0.3,
-                    false,
-                )
-                .await
-                {
-                    if let Ok(cleaned) = result {
-                        save_clean_content(db.clone(), &repo, &app, &content_id, &cleaned);
-                    }
-                }
-                return;
-            }
-            if provider_str == "google" {
-                if let Some(result) = crate::ai::attention_analyzer::try_gemini_call(
-                    db.clone(),
-                    "You extract article body from noisy webpage text. Output clean Markdown only.",
-                    &build_clean_prompt(&raw_text, &locale),
-                    0.3,
-                    false,
-                )
-                .await
-                {
-                    if let Ok(cleaned) = result {
-                        save_clean_content(db.clone(), &repo, &app, &content_id, &cleaned);
-                    }
-                }
-                return;
-            }
             return;
         }
 
@@ -1166,7 +1275,11 @@ fn save_clean_content(
     match repo.update_clean_content(content_id, stripped) {
         Ok(()) => {
             let _ = app.emit("content:clean-ready", content_id);
-            log::info!("Clean content saved for {} ({} chars)", content_id, stripped.len());
+            log::info!(
+                "Clean content saved for {} ({} chars)",
+                content_id,
+                stripped.len()
+            );
             // Trigger wiki recompile with the now-clean content
             let cid = content_id.to_string();
             let db_ref = db;

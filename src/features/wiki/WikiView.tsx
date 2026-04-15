@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { List, Share2, MessageCircle } from "lucide-react";
+import { List, Share2, MessageCircle, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useWikiStore } from "../../stores/wikiStore";
 import { WikiBrowseView } from "./WikiBrowseView";
@@ -11,12 +11,34 @@ type SubView = "browse" | "graph";
 export function WikiView() {
   const { t } = useTranslation("wiki");
   const [subView, setSubView] = useState<SubView>("browse");
-  const { stats, loadStats, selectPage } = useWikiStore();
+  const { stats, loadStats, loadPages, loadGraph, selectedPage, selectPage } = useWikiStore();
   const [askOpen, setAskOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   useEffect(() => {
     loadStats();
   }, [loadStats]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      if (subView === "graph") {
+        await Promise.all([
+          loadStats(),
+          loadGraph(),
+          selectedPage ? selectPage(selectedPage.id) : Promise.resolve(),
+        ]);
+      } else {
+        await Promise.all([
+          loadStats(),
+          loadPages(),
+          selectedPage ? selectPage(selectedPage.id) : Promise.resolve(),
+        ]);
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   const handleNavigateToPage = (pageId: string) => {
     selectPage(pageId);
@@ -53,6 +75,19 @@ export function WikiView() {
 
           {/* Controls */}
           <div className="flex items-center gap-2">
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              title={t("actions.refreshTooltip")}
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all border
+                ${isRefreshing
+                  ? "text-orange-500 border-orange-200/60 bg-orange-50/70 cursor-wait"
+                  : "text-stone-500 border-stone-200/70 hover:text-orange-500 hover:border-orange-200/70 hover:bg-orange-500/10"
+                }`}
+            >
+              <RefreshCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+              <span>{isRefreshing ? t("actions.refreshing") : t("actions.refresh")}</span>
+            </button>
             <button
               onClick={() => setAskOpen(!askOpen)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all

@@ -36,7 +36,11 @@ pub async fn generate_report(state: State<'_, AppState>) -> Result<WeeklyReport,
         .map_err(|e| format!("Failed to read AI model: {}", e))?
         .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
 
-    log::info!("Generating weekly report: provider={}, model={}", provider, model);
+    log::info!(
+        "Generating weekly report: provider={}, model={}",
+        provider,
+        model
+    );
 
     // Generate the report (async)
     let report = report_generator::generate_weekly_report(db, &api_key, &provider, &model).await?;

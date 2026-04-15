@@ -119,6 +119,7 @@ export type BubblePosition = "bottom-right" | "bottom-center" | "bottom-left" | 
 export type DefaultAction = "save" | "dismiss";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "system" | "zh-CN" | "en-US";
+export type WorkspaceStorageMode = "managed" | "connected" | "hybrid";
 
 const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
   "bottom-right", "bottom-center", "bottom-left",
@@ -196,11 +197,16 @@ interface SettingsState {
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
   radarIntervalDays: number;
+  radarAnalysisDays: number;
+  radarAnalysisLimit: number;
   countdownDuration: number;
   screenshotDir: string;
   totalItems: number;
   diskUsageMB: number;
   isLoaded: boolean;
+  setupComplete: boolean;
+  storageMode: WorkspaceStorageMode;
+  workspaceRoot: string;
   xreaderStatus: XReaderStatus | null;
 
   // OpenAI OAuth
@@ -230,9 +236,14 @@ interface SettingsState {
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
   setRadarIntervalDays: (days: number) => void;
+  setRadarAnalysisDays: (days: number) => void;
+  setRadarAnalysisLimit: (limit: number) => void;
   setCountdownDuration: (seconds: number) => void;
   setScreenshotDir: (dir: string) => void;
   setStorageInfo: (totalItems: number, diskUsageMB: number) => void;
+  setStorageMode: (mode: WorkspaceStorageMode) => Promise<void>;
+  completeWorkspaceSetup: (mode: WorkspaceStorageMode) => Promise<void>;
+  reopenWorkspaceSetup: () => Promise<void>;
   loadXReaderStatus: () => Promise<void>;
   loadOAuthStatus: () => Promise<void>;
   startOAuthLogin: () => Promise<void>;
@@ -254,11 +265,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
   radarIntervalDays: 3,
+  radarAnalysisDays: 100,
+  radarAnalysisLimit: 500,
   countdownDuration: 5,
   screenshotDir: "~/Library/Application Support/com.openwiki.app/screenshots",
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
+  setupComplete: false,
+  storageMode: "managed" as WorkspaceStorageMode,
+  workspaceRoot: "",
   xreaderStatus: null,
 
   oauthLoggedIn: false,
@@ -308,6 +324,35 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       const resolvedLanguage = languageMode === "system" ? getSystemLanguage() : languageMode;
       initLanguageFromSettings(languageMode);
 
+      const hasLocalWiki = Boolean(settings.wiki_local_source_path?.trim());
+      const hasLocalRaw = Boolean(settings.wiki_raw_source_path?.trim());
+      const hasExternalSources = hasLocalWiki || hasLocalRaw;
+      const workspaceRoot = settings.workspace_root || "";
+      const storageMode =
+        settings.app_storage_mode === "managed" ||
+        settings.app_storage_mode === "connected" ||
+        settings.app_storage_mode === "hybrid"
+          ? (settings.app_storage_mode as WorkspaceStorageMode)
+          : hasLocalWiki && hasLocalRaw
+            ? "hybrid"
+            : hasExternalSources
+              ? "connected"
+              : "managed";
+
+      let totalItems = 0;
+      let diskUsageMB = 0;
+      try {
+        const storageInfo = await invoke<{ total_items: number; disk_usage_mb: number }>("get_storage_info");
+        totalItems = storageInfo.total_items;
+        diskUsageMB = storageInfo.disk_usage_mb;
+      } catch {}
+
+      const setupComplete =
+        settings.app_setup_complete === "true" ||
+        Boolean(workspaceRoot.trim()) ||
+        hasExternalSources ||
+        totalItems > 0;
+
       set({
         apiKey,
         provider,
@@ -325,11 +370,18 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         radarIntervalDays: parseInt(settings.radar_interval_days || "3", 10),
+        radarAnalysisDays: parseInt(settings.radar_analysis_days || "100", 10),
+        radarAnalysisLimit: parseInt(settings.radar_analysis_limit || "500", 10),
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
         screenshotDir:
           settings.screenshot_dir ||
           "~/Library/Application Support/com.openwiki.app/screenshots",
+        totalItems,
+        diskUsageMB,
         isLoaded: true,
+        setupComplete,
+        storageMode,
+        workspaceRoot,
       });
 
       // Load OAuth status
@@ -458,6 +510,20 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     );
   },
 
+  setRadarAnalysisDays: (days) => {
+    set({ radarAnalysisDays: days });
+    updateSetting("radar_analysis_days", String(days)).catch((e) =>
+      console.error("Failed to save radar_analysis_days:", e)
+    );
+  },
+
+  setRadarAnalysisLimit: (limit) => {
+    set({ radarAnalysisLimit: limit });
+    updateSetting("radar_analysis_limit", String(limit)).catch((e) =>
+      console.error("Failed to save radar_analysis_limit:", e)
+    );
+  },
+
   setCountdownDuration: (seconds) => {
     set({ countdownDuration: seconds });
     updateSetting("countdown_seconds", String(seconds)).catch((e) =>
@@ -468,6 +534,29 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setScreenshotDir: (dir) => set({ screenshotDir: dir }),
   setStorageInfo: (totalItems, diskUsageMB) =>
     set({ totalItems, diskUsageMB }),
+  setStorageMode: async (mode) => {
+    set({ storageMode: mode });
+    updateSetting("app_storage_mode", mode).catch((e) =>
+      console.error("Failed to save app_storage_mode:", e)
+    );
+  },
+  completeWorkspaceSetup: async (mode) => {
+    set({ storageMode: mode, setupComplete: true });
+    try {
+      await Promise.all([
+        updateSetting("app_storage_mode", mode),
+        updateSetting("app_setup_complete", "true"),
+      ]);
+    } catch (e) {
+      console.error("Failed to complete workspace setup:", e);
+    }
+  },
+  reopenWorkspaceSetup: async () => {
+    set({ setupComplete: false });
+    updateSetting("app_setup_complete", "false").catch((e) =>
+      console.error("Failed to reopen workspace setup:", e)
+    );
+  },
 
   loadXReaderStatus: async () => {
     try {

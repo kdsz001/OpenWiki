@@ -1,14 +1,64 @@
 use super::database::Database;
 use super::models::{
-    AttentionInsight, CapturedContent, ContentForAnalysis, ContentType, ReportSection,
-    UserFeedback, UserPreference, WeeklyReport,
+    AttentionInsight, CapturedContent, ConceptCandidate, ContentForAnalysis, ContentType,
+    ReportSection, UserFeedback, UserPreference, WeeklyReport,
 };
-use rusqlite::params;
+use rusqlite::{params, types::ValueRef, Row};
 use serde_json;
 use std::sync::Arc;
 
 pub struct Repository {
     db: Arc<Database>,
+}
+
+fn read_i64_lossy(row: &Row<'_>, index: usize) -> rusqlite::Result<i64> {
+    match row.get_ref(index)? {
+        ValueRef::Integer(value) => Ok(value),
+        ValueRef::Real(value) => Ok(value as i64),
+        ValueRef::Text(value) => {
+            let text = std::str::from_utf8(value).unwrap_or_default().trim();
+            if text.is_empty() {
+                return Ok(0);
+            }
+            text.parse::<i64>().map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    index,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        }
+        ValueRef::Null => Ok(0),
+        ValueRef::Blob(_) => Ok(0),
+    }
+}
+
+fn captured_content_from_row(row: &Row<'_>) -> rusqlite::Result<CapturedContent> {
+    Ok(CapturedContent {
+        id: row.get(0)?,
+        content_type: ContentType::from_str(&row.get::<_, String>(1)?),
+        raw_text: row.get(2)?,
+        image_path: row.get(3)?,
+        thumbnail_path: row.get(4)?,
+        source_app: row.get(5)?,
+        source_bundle_id: row.get(6)?,
+        source_url: row.get(7)?,
+        user_note: row.get(8)?,
+        captured_at: row.get(9)?,
+        content_hash: row.get(10)?,
+        byte_size: read_i64_lossy(row, 11)?,
+        is_deleted: row.get::<_, i32>(12)? != 0,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
+        digested_at: row.get(15).unwrap_or(None),
+        digest_action: row.get(16).unwrap_or(None),
+        summary: row.get(17).unwrap_or(None),
+        tags: row.get(18).unwrap_or(None),
+        digest: row.get(19).unwrap_or(None),
+        wiki_compile_hash: row.get(20).unwrap_or(None),
+        wiki_assessed_hash: row.get(21).unwrap_or(None),
+        clean_content: row.get(22).unwrap_or(None),
+    })
 }
 
 impl Repository {
@@ -63,33 +113,7 @@ impl Repository {
              FROM captured_content WHERE is_deleted = 0 ORDER BY captured_at DESC LIMIT ?1 OFFSET ?2"
         )?;
 
-        let rows = stmt.query_map(params![limit, offset], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![limit, offset], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -118,33 +142,7 @@ impl Repository {
              ORDER BY captured_at DESC LIMIT ?2"
         )?;
 
-        let rows = stmt.query_map(params![pattern, limit], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![pattern, limit], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -206,6 +204,146 @@ impl Repository {
             rusqlite::params![summary, tags, digest, id],
         )?;
         Ok(())
+    }
+
+    pub fn replace_content_concept_candidates(
+        &self,
+        content_id: &str,
+        candidates: &[ConceptCandidate],
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM content_concept_candidates WHERE content_id = ?1",
+            params![content_id],
+        )?;
+        for candidate in candidates {
+            tx.execute(
+                "INSERT INTO content_concept_candidates (content_id, name, normalized_name, importance, temporality, rationale, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, datetime('now'))",
+                params![
+                    content_id,
+                    candidate.name,
+                    candidate.normalized_name,
+                    candidate.importance,
+                    candidate.temporality,
+                    candidate.rationale,
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_content_concept_candidates(
+        &self,
+        content_id: &str,
+    ) -> Result<Vec<ConceptCandidate>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT name, normalized_name, importance, temporality, rationale
+             FROM content_concept_candidates
+             WHERE content_id = ?1
+             ORDER BY importance DESC, name ASC",
+        )?;
+        let rows = stmt.query_map(params![content_id], |row| {
+            Ok(ConceptCandidate {
+                name: row.get(0)?,
+                normalized_name: row.get(1)?,
+                importance: row.get(2)?,
+                temporality: row.get(3)?,
+                rationale: row.get(4).unwrap_or(None),
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_promotable_candidate_support(
+        &self,
+        normalized_name: &str,
+        min_importance: f64,
+    ) -> Result<(Vec<String>, i64, i64, f64, Option<String>), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT c.content_id, c.name
+             FROM content_concept_candidates c
+             INNER JOIN captured_content cc ON cc.id = c.content_id
+             WHERE c.normalized_name = ?1
+               AND c.temporality = 'recurring'
+               AND c.importance >= ?2
+               AND cc.is_deleted = 0
+             ORDER BY c.importance DESC, cc.captured_at DESC",
+        )?;
+        let rows = stmt.query_map(params![normalized_name, min_importance], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut content_ids = Vec::new();
+        let mut display_name = None;
+        for row in rows {
+            let (content_id, name) = row?;
+            if !content_ids.contains(&content_id) {
+                content_ids.push(content_id);
+            }
+            if display_name.is_none() && !name.trim().is_empty() {
+                display_name = Some(name);
+            }
+        }
+
+        if content_ids.is_empty() {
+            return Ok((Vec::new(), 0, 0, 0.0, None));
+        }
+
+        let source_count = content_ids.len() as i64;
+        let placeholders = vec!["?"; content_ids.len()].join(",");
+        let day_query = format!(
+            "SELECT COUNT(DISTINCT DATE(captured_at))
+             FROM captured_content
+             WHERE is_deleted = 0 AND id IN ({})",
+            placeholders
+        );
+        let mut day_stmt = conn.prepare(&day_query)?;
+        let day_count: i64 = day_stmt.query_row(
+            rusqlite::params_from_iter(content_ids.iter().map(|id| id.as_str())),
+            |row| row.get(0),
+        )?;
+
+        let avg_importance: f64 = conn.query_row(
+            "SELECT COALESCE(AVG(importance), 0.0)
+             FROM content_concept_candidates c
+             INNER JOIN captured_content cc ON cc.id = c.content_id
+             WHERE c.normalized_name = ?1
+               AND c.temporality = 'recurring'
+               AND c.importance >= ?2
+               AND cc.is_deleted = 0",
+            params![normalized_name, min_importance],
+            |row| row.get(0),
+        )?;
+
+        Ok((
+            content_ids,
+            source_count,
+            day_count,
+            avg_importance,
+            display_name,
+        ))
     }
 
     /// Update the AI-cleaned content and optionally clear wiki hash to trigger recompilation.
@@ -286,33 +424,7 @@ impl Repository {
              FROM captured_content WHERE content_hash = ?1 AND is_deleted = 0 LIMIT 1"
         )?;
 
-        let mut rows = stmt.query_map(params![hash], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let mut rows = stmt.query_map(params![hash], captured_content_from_row)?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
@@ -353,33 +465,7 @@ impl Repository {
              ORDER BY captured_at DESC"
         )?;
 
-        let rows = stmt.query_map(params![week_start, week_end], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![week_start, week_end], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -403,38 +489,109 @@ impl Repository {
              FROM captured_content WHERE id = ?1 AND is_deleted = 0"
         )?;
 
-        let mut rows = stmt.query_map(params![id], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let mut rows = stmt.query_map(params![id], captured_content_from_row)?;
 
         match rows.next() {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
         }
+    }
+
+    pub fn get_content_by_source_url(
+        &self,
+        source_url: &str,
+    ) -> Result<Option<CapturedContent>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, content_type, raw_text, image_path, thumbnail_path, source_app, source_bundle_id, source_url, user_note, captured_at, content_hash, byte_size, is_deleted, created_at, updated_at, digested_at, digest_action, summary, tags, digest, wiki_compile_hash, wiki_assessed_hash, clean_content
+             FROM captured_content WHERE source_url = ?1 AND is_deleted = 0 LIMIT 1"
+        )?;
+
+        let mut rows = stmt.query_map(params![source_url], captured_content_from_row)?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_local_synced_contents(
+        &self,
+        source_prefix: &str,
+    ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, source_url FROM captured_content
+             WHERE is_deleted = 0 AND source_url LIKE ?1",
+        )?;
+        let rows = stmt.query_map(params![format!("{}%", source_prefix)], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn update_local_synced_content(
+        &self,
+        content: &CapturedContent,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "UPDATE captured_content
+             SET content_type = ?1,
+                 raw_text = ?2,
+                 image_path = ?3,
+                 thumbnail_path = ?4,
+                 source_app = ?5,
+                 source_bundle_id = ?6,
+                 source_url = ?7,
+                 user_note = ?8,
+                 captured_at = ?9,
+                 content_hash = ?10,
+                 byte_size = ?11,
+                 updated_at = datetime('now'),
+                 digested_at = NULL,
+                 digest_action = NULL,
+                 summary = NULL,
+                 tags = NULL,
+                 digest = NULL,
+                 wiki_compile_hash = NULL,
+                 wiki_assessed_hash = NULL,
+                 clean_content = NULL,
+                 is_deleted = 0
+             WHERE id = ?12",
+            params![
+                content.content_type.as_str(),
+                content.raw_text,
+                content.image_path,
+                content.thumbnail_path,
+                content.source_app,
+                content.source_bundle_id,
+                content.source_url,
+                content.user_note,
+                content.captured_at,
+                content.content_hash,
+                content.byte_size,
+                content.id,
+            ],
+        )?;
+        Ok(())
     }
 
     // ========== Weekly Reports ==========
@@ -745,33 +902,7 @@ impl Repository {
              FROM captured_content WHERE DATE(captured_at) = ?1 AND is_deleted = 0 ORDER BY captured_at ASC",
         )?;
 
-        let rows = stmt.query_map(params![date], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![date], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -800,33 +931,7 @@ impl Repository {
              ORDER BY captured_at ASC LIMIT ?1"
         )?;
 
-        let rows = stmt.query_map(params![limit], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![limit], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -853,33 +958,7 @@ impl Repository {
              ORDER BY captured_at ASC"
         )?;
 
-        let rows = stmt.query_map(params![days], |row| {
-            Ok(CapturedContent {
-                id: row.get(0)?,
-                content_type: ContentType::from_str(&row.get::<_, String>(1)?),
-                raw_text: row.get(2)?,
-                image_path: row.get(3)?,
-                thumbnail_path: row.get(4)?,
-                source_app: row.get(5)?,
-                source_bundle_id: row.get(6)?,
-                source_url: row.get(7)?,
-                user_note: row.get(8)?,
-                captured_at: row.get(9)?,
-                content_hash: row.get(10)?,
-                byte_size: row.get(11)?,
-                is_deleted: row.get::<_, i32>(12)? != 0,
-                created_at: row.get(13)?,
-                updated_at: row.get(14)?,
-                digested_at: row.get(15).unwrap_or(None),
-                digest_action: row.get(16).unwrap_or(None),
-                summary: row.get(17).unwrap_or(None),
-                tags: row.get(18).unwrap_or(None),
-                digest: row.get(19).unwrap_or(None),
-                wiki_compile_hash: row.get(20).unwrap_or(None),
-                wiki_assessed_hash: row.get(21).unwrap_or(None),
-                clean_content: row.get(22).unwrap_or(None),
-            })
-        })?;
+        let rows = stmt.query_map(params![days], captured_content_from_row)?;
 
         let mut results = Vec::new();
         for row in rows {
@@ -996,29 +1075,104 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(days)).to_rfc3339();
-        let mut stmt = conn.prepare(
-            "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
-             FROM captured_content
-             WHERE is_deleted = 0 AND captured_at >= ?1
-             ORDER BY captured_at DESC
-             LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(params![cutoff, limit as i64], |row| {
-            Ok(ContentForAnalysis {
-                id: row.get(0)?,
-                raw_text: row.get(1)?,
-                source_url: row.get(2)?,
-                captured_at: row.get(3)?,
-                summary: row.get(4)?,
-                tags: row.get(5)?,
-                user_note: row.get(6)?,
-                source_app: row.get(7)?,
-                content_type: row.get(8)?,
-            })
-        })?;
+        let sql = match (days <= 0, limit == 0) {
+            (true, true) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC"
+            }
+            (true, false) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC
+                 LIMIT ?1"
+            }
+            (false, true) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0 AND (captured_at >= ?1 OR updated_at >= ?1)
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC"
+            }
+            (false, false) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0 AND (captured_at >= ?1 OR updated_at >= ?1)
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC
+                 LIMIT ?2"
+            }
+        };
+        let mut stmt = conn.prepare(sql)?;
         let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
+        if days <= 0 && limit == 0 {
+            let rows = stmt.query_map([], |row| {
+                Ok(ContentForAnalysis {
+                    id: row.get(0)?,
+                    raw_text: row.get(1)?,
+                    source_url: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    summary: row.get(4)?,
+                    tags: row.get(5)?,
+                    user_note: row.get(6)?,
+                    source_app: row.get(7)?,
+                    content_type: row.get(8)?,
+                })
+            })?;
+            for row in rows {
+                results.push(row?);
+            }
+        } else if days <= 0 {
+            let rows = stmt.query_map(params![limit as i64], |row| {
+                Ok(ContentForAnalysis {
+                    id: row.get(0)?,
+                    raw_text: row.get(1)?,
+                    source_url: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    summary: row.get(4)?,
+                    tags: row.get(5)?,
+                    user_note: row.get(6)?,
+                    source_app: row.get(7)?,
+                    content_type: row.get(8)?,
+                })
+            })?;
+            for row in rows {
+                results.push(row?);
+            }
+        } else if limit == 0 {
+            let rows = stmt.query_map(params![cutoff], |row| {
+                Ok(ContentForAnalysis {
+                    id: row.get(0)?,
+                    raw_text: row.get(1)?,
+                    source_url: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    summary: row.get(4)?,
+                    tags: row.get(5)?,
+                    user_note: row.get(6)?,
+                    source_app: row.get(7)?,
+                    content_type: row.get(8)?,
+                })
+            })?;
+            for row in rows {
+                results.push(row?);
+            }
+        } else {
+            let rows = stmt.query_map(params![cutoff, limit as i64], |row| {
+                Ok(ContentForAnalysis {
+                    id: row.get(0)?,
+                    raw_text: row.get(1)?,
+                    source_url: row.get(2)?,
+                    captured_at: row.get(3)?,
+                    summary: row.get(4)?,
+                    tags: row.get(5)?,
+                    user_note: row.get(6)?,
+                    source_app: row.get(7)?,
+                    content_type: row.get(8)?,
+                })
+            })?;
+            for row in rows {
+                results.push(row?);
+            }
         }
         Ok(results)
     }
@@ -1191,6 +1345,57 @@ impl Repository {
         Ok(())
     }
 
+    pub fn get_attention_batch_report(
+        &self,
+        batch_key: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT report_json FROM attention_batch_cache WHERE batch_key = ?1 LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![batch_key], |row| row.get::<_, String>(0))?;
+        match rows.next() {
+            Some(Ok(report_json)) => Ok(Some(report_json)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_attention_batch_report(
+        &self,
+        batch_key: &str,
+        content_ids_json: &str,
+        report_json: &str,
+        item_count: usize,
+        model_used: &str,
+        locale: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO attention_batch_cache
+             (batch_key, content_ids_json, report_json, item_count, model_used, locale, generated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                batch_key,
+                content_ids_json,
+                report_json,
+                item_count as i64,
+                model_used,
+                locale,
+                chrono::Utc::now().to_rfc3339()
+            ],
+        )?;
+        Ok(())
+    }
+
     /// Get the most recent current insight.
     pub fn get_current_insight(
         &self,
@@ -1249,7 +1454,11 @@ impl Repository {
         &self,
         page: &super::models::WikiPage,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT INTO wiki_pages (id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
@@ -1266,7 +1475,11 @@ impl Repository {
         &self,
         page: &super::models::WikiPage,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_pages SET title=?1, body_markdown=?2, summary=?3, tags=?4, status=?5, confidence=?6, updated_at=datetime('now'), last_compiled_at=?7 WHERE id=?8",
             params![page.title, page.body_markdown, page.summary, page.tags, page.status, page.confidence, page.last_compiled_at, page.id],
@@ -1280,7 +1493,11 @@ impl Repository {
         status: &str,
         confidence: f64,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_pages SET status=?1, confidence=?2, updated_at=datetime('now') WHERE id=?3",
             params![status, confidence, page_id],
@@ -1292,7 +1509,11 @@ impl Repository {
         &self,
         id: &str,
     ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE id = ?1"
@@ -1310,7 +1531,8 @@ impl Repository {
                 confidence: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
-                last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         match rows.next() {
@@ -1324,7 +1546,11 @@ impl Repository {
         &self,
         slug: &str,
     ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE slug = ?1"
@@ -1342,7 +1568,48 @@ impl Repository {
                 confidence: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
-                last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
+            })
+        })?;
+        match rows.next() {
+            Some(Ok(page)) => Ok(Some(page)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn get_wiki_page_by_title(
+        &self,
+        title: &str,
+    ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
+             FROM wiki_pages
+             WHERE lower(title) = lower(?1)
+             AND status IN ('active', 'needs_recompile')
+             LIMIT 1"
+        )?;
+        let mut rows = stmt.query_map(params![title], |row| {
+            Ok(super::models::WikiPage {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         match rows.next() {
@@ -1357,21 +1624,36 @@ impl Repository {
         limit: i64,
         offset: i64,
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE status IN ('active', 'needs_recompile') ORDER BY updated_at DESC LIMIT ?1 OFFSET ?2"
         )?;
         let rows = stmt.query_map(params![limit, offset], |row| {
             Ok(super::models::WikiPage {
-                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
-                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
-                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1380,7 +1662,11 @@ impl Repository {
         query: &str,
         limit: i64,
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let pattern = format!("%{}%", query);
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
@@ -1391,14 +1677,25 @@ impl Repository {
         )?;
         let rows = stmt.query_map(params![pattern, limit], |row| {
             Ok(super::models::WikiPage {
-                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
-                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
-                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1406,21 +1703,36 @@ impl Repository {
         &self,
         page_type: &str,
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE page_type = ?1 AND status IN ('active', 'needs_recompile') ORDER BY updated_at DESC"
         )?;
         let rows = stmt.query_map(params![page_type], |row| {
             Ok(super::models::WikiPage {
-                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
-                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
-                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1428,44 +1740,96 @@ impl Repository {
         &self,
         status: &str,
     ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE status = ?1 ORDER BY updated_at DESC"
         )?;
         let rows = stmt.query_map(params![status], |row| {
             Ok(super::models::WikiPage {
-                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
-                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
-                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?, source_message_id: row.get(12).unwrap_or(None),
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
     pub fn delete_wiki_page(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute("DELETE FROM wiki_pages WHERE id = ?1", params![id])?;
         Ok(())
     }
 
-    pub fn get_wiki_stats(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        let total_pages: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM wiki_pages WHERE status IN ('active', 'needs_recompile')", [], |r| r.get(0)
+    pub fn delete_wiki_page_fully(&self, id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM wiki_edges WHERE source_page_id = ?1 OR target_page_id = ?1",
+            params![id],
         )?;
-        let total_edges: i64 = conn.query_row("SELECT COUNT(*) FROM wiki_edges", [], |r| r.get(0))?;
+        tx.execute(
+            "DELETE FROM wiki_page_sources WHERE page_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM wiki_pages WHERE id = ?1", params![id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn get_wiki_stats(&self) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let total_pages: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM wiki_pages
+             WHERE status IN ('active', 'needs_recompile')
+               AND page_type NOT IN ('source', 'qa')",
+            [],
+            |r| r.get(0),
+        )?;
+        let total_edges: i64 =
+            conn.query_row("SELECT COUNT(*) FROM wiki_edges", [], |r| r.get(0))?;
         let total_sources: i64 = conn.query_row(
             "SELECT COUNT(DISTINCT content_id) FROM wiki_page_sources WHERE source_status = 'active'", [], |r| r.get(0)
         )?;
         let needs_recompile: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM wiki_pages WHERE status = 'needs_recompile'", [], |r| r.get(0)
+            "SELECT COUNT(*) FROM wiki_pages WHERE status = 'needs_recompile'",
+            [],
+            |r| r.get(0),
         )?;
         let lint_open: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM wiki_lint_results WHERE status = 'open'", [], |r| r.get(0)
+            "SELECT COUNT(*) FROM wiki_lint_results WHERE status = 'open'",
+            [],
+            |r| r.get(0),
         )?;
         Ok(serde_json::json!({
             "total_pages": total_pages,
@@ -1477,16 +1841,28 @@ impl Repository {
     }
 
     /// Returns (id, title, summary) for all active pages — used as compile context.
-    pub fn get_wiki_page_summaries(&self) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn get_wiki_page_summaries(
+        &self,
+    ) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, COALESCE(summary, '') FROM wiki_pages WHERE status = 'active' ORDER BY title"
         )?;
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1498,7 +1874,11 @@ impl Repository {
         content_id: &str,
         compile_hash: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO wiki_page_sources (page_id, content_id, compile_hash, source_status, contributed_at)
              VALUES (?1, ?2, ?3, 'active', datetime('now'))",
@@ -1511,18 +1891,28 @@ impl Repository {
         &self,
         page_id: &str,
     ) -> Result<Vec<super::models::WikiPageSource>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, page_id, content_id, compile_hash, source_status, contributed_at FROM wiki_page_sources WHERE page_id = ?1"
         )?;
         let rows = stmt.query_map(params![page_id], |row| {
             Ok(super::models::WikiPageSource {
-                id: row.get(0)?, page_id: row.get(1)?, content_id: row.get(2)?,
-                compile_hash: row.get(3)?, source_status: row.get(4)?, contributed_at: row.get(5)?,
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                content_id: row.get(2)?,
+                compile_hash: row.get(3)?,
+                source_status: row.get(4)?,
+                contributed_at: row.get(5)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1530,18 +1920,28 @@ impl Repository {
         &self,
         content_id: &str,
     ) -> Result<Vec<super::models::WikiPageSource>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, page_id, content_id, compile_hash, source_status, contributed_at FROM wiki_page_sources WHERE content_id = ?1"
         )?;
         let rows = stmt.query_map(params![content_id], |row| {
             Ok(super::models::WikiPageSource {
-                id: row.get(0)?, page_id: row.get(1)?, content_id: row.get(2)?,
-                compile_hash: row.get(3)?, source_status: row.get(4)?, contributed_at: row.get(5)?,
+                id: row.get(0)?,
+                page_id: row.get(1)?,
+                content_id: row.get(2)?,
+                compile_hash: row.get(3)?,
+                source_status: row.get(4)?,
+                contributed_at: row.get(5)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1551,7 +1951,11 @@ impl Repository {
         content_id: &str,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_page_sources SET source_status = ?1 WHERE page_id = ?2 AND content_id = ?3",
             params![status, page_id, content_id],
@@ -1564,7 +1968,11 @@ impl Repository {
         content_id: &str,
         status: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_page_sources SET source_status = ?1 WHERE content_id = ?2",
             params![status, content_id],
@@ -1572,22 +1980,59 @@ impl Repository {
         Ok(())
     }
 
-    pub fn count_active_sources(&self, page_id: &str) -> Result<(i64, i64), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn count_active_sources(
+        &self,
+        page_id: &str,
+    ) -> Result<(i64, i64), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let active: i64 = conn.query_row(
             "SELECT COUNT(*) FROM wiki_page_sources WHERE page_id = ?1 AND source_status = 'active'",
             params![page_id], |r| r.get(0),
         )?;
         let total: i64 = conn.query_row(
             "SELECT COUNT(*) FROM wiki_page_sources WHERE page_id = ?1",
-            params![page_id], |r| r.get(0),
+            params![page_id],
+            |r| r.get(0),
         )?;
         Ok((active, total))
     }
 
+    pub fn count_active_source_days_for_page(
+        &self,
+        page_id: &str,
+    ) -> Result<i64, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let day_count: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT DATE(cc.captured_at))
+             FROM wiki_page_sources wps
+             INNER JOIN captured_content cc ON cc.id = wps.content_id
+             WHERE wps.page_id = ?1
+               AND wps.source_status = 'active'
+               AND cc.is_deleted = 0",
+            params![page_id],
+            |r| r.get(0),
+        )?;
+        Ok(day_count)
+    }
+
     pub fn delete_sources_for_page(&self, page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        conn.execute("DELETE FROM wiki_page_sources WHERE page_id = ?1", params![page_id])?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "DELETE FROM wiki_page_sources WHERE page_id = ?1",
+            params![page_id],
+        )?;
         Ok(())
     }
 
@@ -1600,7 +2045,11 @@ impl Repository {
         relation: &str,
         weight: f64,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT OR REPLACE INTO wiki_edges (source_page_id, target_page_id, relation, weight, created_at)
              VALUES (?1, ?2, ?3, ?4, datetime('now'))",
@@ -1613,43 +2062,130 @@ impl Repository {
         &self,
         page_id: &str,
     ) -> Result<Vec<super::models::WikiEdge>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, source_page_id, target_page_id, relation, weight, created_at
-             FROM wiki_edges WHERE source_page_id = ?1 OR target_page_id = ?1"
+             FROM wiki_edges WHERE source_page_id = ?1 OR target_page_id = ?1",
         )?;
         let rows = stmt.query_map(params![page_id], |row| {
             Ok(super::models::WikiEdge {
-                id: row.get(0)?, source_page_id: row.get(1)?, target_page_id: row.get(2)?,
-                relation: row.get(3)?, weight: row.get(4)?, created_at: row.get(5)?,
+                id: row.get(0)?,
+                source_page_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                relation: row.get(3)?,
+                weight: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
-    pub fn get_all_wiki_edges(&self) -> Result<Vec<super::models::WikiEdge>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn get_target_pages_by_relation(
+        &self,
+        page_id: &str,
+        relation: &str,
+    ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.title, p.slug, p.page_type, p.body_markdown, p.summary, p.tags, p.status, p.confidence, p.created_at, p.updated_at, p.last_compiled_at, p.source_message_id
+             FROM wiki_edges e
+             JOIN wiki_pages p ON p.id = e.target_page_id
+             WHERE e.source_page_id = ?1
+             AND e.relation = ?2
+             AND p.status IN ('active', 'needs_recompile')
+             ORDER BY p.updated_at DESC"
+        )?;
+        let rows = stmt.query_map(params![page_id, relation], |row| {
+            Ok(super::models::WikiPage {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn get_all_wiki_edges(
+        &self,
+    ) -> Result<Vec<super::models::WikiEdge>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, source_page_id, target_page_id, relation, weight, created_at FROM wiki_edges"
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(super::models::WikiEdge {
-                id: row.get(0)?, source_page_id: row.get(1)?, target_page_id: row.get(2)?,
-                relation: row.get(3)?, weight: row.get(4)?, created_at: row.get(5)?,
+                id: row.get(0)?,
+                source_page_id: row.get(1)?,
+                target_page_id: row.get(2)?,
+                relation: row.get(3)?,
+                weight: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
     pub fn delete_edges_for_page(&self, page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "DELETE FROM wiki_edges WHERE source_page_id = ?1 OR target_page_id = ?1",
             params![page_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_edges_for_page_with_relation(
+        &self,
+        page_id: &str,
+        relation: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "DELETE FROM wiki_edges
+             WHERE relation = ?1 AND (source_page_id = ?2 OR target_page_id = ?2)",
+            params![relation, page_id],
         )?;
         Ok(())
     }
@@ -1660,7 +2196,11 @@ impl Repository {
         &self,
         relation: &str,
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let n = conn.execute(
             "DELETE FROM wiki_edges WHERE relation = ?1",
             params![relation],
@@ -1675,7 +2215,11 @@ impl Repository {
         content_id: &str,
         content_hash: &str,
     ) -> Result<bool, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         match conn.execute(
             "INSERT INTO wiki_compile_log (content_id, content_hash, status, created_at)
              VALUES (?1, ?2, 'compiling', datetime('now'))",
@@ -1699,7 +2243,11 @@ impl Repository {
         model_used: Option<&str>,
         error_message: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_compile_log SET status=?1, pages_touched=?2, model_used=?3, error_message=?4, compiled_at=datetime('now')
              WHERE content_id=?5 AND status='compiling'",
@@ -1709,10 +2257,55 @@ impl Repository {
     }
 
     pub fn cleanup_stale_compile_locks(&self) -> Result<u64, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let count = conn.execute(
             "UPDATE wiki_compile_log SET status='error', error_message='stale lock cleaned on startup' WHERE status='compiling'",
             [],
+        )?;
+        Ok(count as u64)
+    }
+
+    pub fn cleanup_stale_compile_locks_older_than(
+        &self,
+        max_age_seconds: i64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let age_expr = format!("-{} seconds", max_age_seconds.max(0));
+        let count = conn.execute(
+            "UPDATE wiki_compile_log
+             SET status='error', error_message='stale lock cleaned after timeout'
+             WHERE status='compiling' AND created_at <= datetime('now', ?1)",
+            params![age_expr],
+        )?;
+        Ok(count as u64)
+    }
+
+    pub fn cleanup_stale_compile_lock_for_content(
+        &self,
+        content_id: &str,
+        max_age_seconds: i64,
+    ) -> Result<u64, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let age_expr = format!("-{} seconds", max_age_seconds.max(0));
+        let count = conn.execute(
+            "UPDATE wiki_compile_log
+             SET status='error', error_message='stale lock cleaned on retry'
+             WHERE content_id = ?1
+               AND status='compiling'
+               AND created_at <= datetime('now', ?2)",
+            params![content_id, age_expr],
         )?;
         Ok(count as u64)
     }
@@ -1724,7 +2317,11 @@ impl Repository {
         content_id: &str,
         hash: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE captured_content SET wiki_compile_hash=?1, wiki_assessed_hash=?1 WHERE id=?2",
             params![hash, content_id],
@@ -1737,7 +2334,11 @@ impl Repository {
         content_id: &str,
         hash: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE captured_content SET wiki_assessed_hash=?1 WHERE id=?2",
             params![hash, content_id],
@@ -1751,7 +2352,11 @@ impl Repository {
         &self,
         conv: &super::models::WikiConversation,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT INTO wiki_conversations (id, question, answer, pages_used, saved_as_page, model_used, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -1764,20 +2369,30 @@ impl Repository {
         &self,
         limit: i64,
     ) -> Result<Vec<super::models::WikiConversation>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, question, answer, pages_used, saved_as_page, model_used, created_at
-             FROM wiki_conversations ORDER BY created_at DESC LIMIT ?1"
+             FROM wiki_conversations ORDER BY created_at DESC LIMIT ?1",
         )?;
         let rows = stmt.query_map(params![limit], |row| {
             Ok(super::models::WikiConversation {
-                id: row.get(0)?, question: row.get(1)?, answer: row.get(2)?,
-                pages_used: row.get(3)?, saved_as_page: row.get(4)?,
-                model_used: row.get(5)?, created_at: row.get(6)?,
+                id: row.get(0)?,
+                question: row.get(1)?,
+                answer: row.get(2)?,
+                pages_used: row.get(3)?,
+                saved_as_page: row.get(4)?,
+                model_used: row.get(5)?,
+                created_at: row.get(6)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1786,7 +2401,11 @@ impl Repository {
         conv_id: &str,
         page_id: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_conversations SET saved_as_page=?1 WHERE id=?2",
             params![page_id, conv_id],
@@ -1804,7 +2423,11 @@ impl Repository {
         description: &str,
         page_ids: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT INTO wiki_lint_results (lint_type, severity, title, description, page_ids, status, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 'open', datetime('now'))",
@@ -1813,26 +2436,43 @@ impl Repository {
         Ok(())
     }
 
-    pub fn get_open_lint_results(&self) -> Result<Vec<super::models::WikiLintResult>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn get_open_lint_results(
+        &self,
+    ) -> Result<Vec<super::models::WikiLintResult>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, lint_type, severity, title, description, page_ids, status, created_at
-             FROM wiki_lint_results WHERE status = 'open' ORDER BY created_at DESC"
+             FROM wiki_lint_results WHERE status = 'open' ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(super::models::WikiLintResult {
-                id: row.get(0)?, lint_type: row.get(1)?, severity: row.get(2)?,
-                title: row.get(3)?, description: row.get(4)?, page_ids: row.get(5)?,
-                status: row.get(6)?, created_at: row.get(7)?,
+                id: row.get(0)?,
+                lint_type: row.get(1)?,
+                severity: row.get(2)?,
+                title: row.get(3)?,
+                description: row.get(4)?,
+                page_ids: row.get(5)?,
+                status: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
     pub fn resolve_lint_result(&self, id: i64) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_lint_results SET status='resolved' WHERE id=?1",
             params![id],
@@ -1843,8 +2483,15 @@ impl Repository {
     /// Batch-resolve all open lint results of a given type.
     /// Used at app startup to clean up stale "source deleted" notifications
     /// from before we stopped auto-generating them on content deletion.
-    pub fn resolve_lint_results_by_type(&self, lint_type: &str) -> Result<usize, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn resolve_lint_results_by_type(
+        &self,
+        lint_type: &str,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let n = conn.execute(
             "UPDATE wiki_lint_results SET status='resolved' WHERE status='open' AND lint_type=?1",
             params![lint_type],
@@ -1853,10 +2500,21 @@ impl Repository {
     }
 
     /// Recalculate confidence for a page based on its source health.
-    pub fn recalculate_page_confidence(&self, page_id: &str) -> Result<f64, Box<dyn std::error::Error>> {
+    pub fn recalculate_page_confidence(
+        &self,
+        page_id: &str,
+    ) -> Result<f64, Box<dyn std::error::Error>> {
         let (active, total) = self.count_active_sources(page_id)?;
-        let confidence = if total == 0 { 0.3 } else { active as f64 / total as f64 };
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let confidence = if total == 0 {
+            0.3
+        } else {
+            active as f64 / total as f64
+        };
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_pages SET confidence=?1, updated_at=datetime('now') WHERE id=?2",
             params![confidence, page_id],
@@ -1864,7 +2522,9 @@ impl Repository {
         Ok(confidence)
     }
 
-    pub fn get_pages_needing_recompile(&self) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
+    pub fn get_pages_needing_recompile(
+        &self,
+    ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
         self.get_wiki_pages_by_status("needs_recompile")
     }
 
@@ -1875,7 +2535,11 @@ impl Repository {
         id: &str,
         title: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT INTO wiki_chat_sessions (id, title, created_at, updated_at) VALUES (?1, ?2, datetime('now'), datetime('now'))",
             params![id, title],
@@ -1887,17 +2551,26 @@ impl Repository {
         &self,
         limit: i64,
     ) -> Result<Vec<super::models::WikiChatSession>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, created_at, updated_at FROM wiki_chat_sessions ORDER BY updated_at DESC LIMIT ?1"
         )?;
         let rows = stmt.query_map(params![limit], |row| {
             Ok(super::models::WikiChatSession {
-                id: row.get(0)?, title: row.get(1)?, created_at: row.get(2)?, updated_at: row.get(3)?,
+                id: row.get(0)?,
+                title: row.get(1)?,
+                created_at: row.get(2)?,
+                updated_at: row.get(3)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
@@ -1906,7 +2579,11 @@ impl Repository {
         session_id: &str,
         title: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_chat_sessions SET title=?1, updated_at=datetime('now') WHERE id=?2",
             params![title, session_id],
@@ -1914,11 +2591,12 @@ impl Repository {
         Ok(())
     }
 
-    pub fn touch_chat_session(
-        &self,
-        session_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn touch_chat_session(&self, session_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "UPDATE wiki_chat_sessions SET updated_at=datetime('now') WHERE id=?1",
             params![session_id],
@@ -1926,12 +2604,16 @@ impl Repository {
         Ok(())
     }
 
-    pub fn delete_chat_session(
-        &self,
-        session_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
-        conn.execute("DELETE FROM wiki_chat_sessions WHERE id=?1", params![session_id])?;
+    pub fn delete_chat_session(&self, session_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "DELETE FROM wiki_chat_sessions WHERE id=?1",
+            params![session_id],
+        )?;
         Ok(())
     }
 
@@ -1941,7 +2623,11 @@ impl Repository {
         &self,
         msg: &super::models::WikiChatMessage,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
             "INSERT INTO wiki_chat_messages (id, session_id, role, content, pages_used, source_mode, turn_index, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))",
@@ -1954,31 +2640,44 @@ impl Repository {
         &self,
         session_id: &str,
     ) -> Result<Vec<super::models::WikiChatMessage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, session_id, role, content, pages_used, source_mode, turn_index, created_at
-             FROM wiki_chat_messages WHERE session_id=?1 ORDER BY turn_index ASC"
+             FROM wiki_chat_messages WHERE session_id=?1 ORDER BY turn_index ASC",
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
             Ok(super::models::WikiChatMessage {
-                id: row.get(0)?, session_id: row.get(1)?, role: row.get(2)?,
-                content: row.get(3)?, pages_used: row.get(4)?, source_mode: row.get(5)?,
-                turn_index: row.get(6)?, created_at: row.get(7)?,
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                pages_used: row.get(4)?,
+                source_mode: row.get(5)?,
+                turn_index: row.get(6)?,
+                created_at: row.get(7)?,
             })
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 
-    pub fn get_next_turn_index(
-        &self,
-        session_id: &str,
-    ) -> Result<i32, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn get_next_turn_index(&self, session_id: &str) -> Result<i32, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let max: Option<i32> = conn.query_row(
             "SELECT MAX(turn_index) FROM wiki_chat_messages WHERE session_id=?1",
-            params![session_id], |r| r.get(0),
+            params![session_id],
+            |r| r.get(0),
         )?;
         Ok(max.unwrap_or(-1) + 1)
     }
@@ -1987,17 +2686,29 @@ impl Repository {
         &self,
         message_id: &str,
     ) -> Result<Option<super::models::WikiPage>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, slug, page_type, body_markdown, summary, tags, status, confidence, created_at, updated_at, last_compiled_at, source_message_id
              FROM wiki_pages WHERE source_message_id = ?1"
         )?;
         let mut rows = stmt.query_map(params![message_id], |row| {
             Ok(super::models::WikiPage {
-                id: row.get(0)?, title: row.get(1)?, slug: row.get(2)?,
-                page_type: row.get(3)?, body_markdown: row.get(4)?, summary: row.get(5)?,
-                tags: row.get(6)?, status: row.get(7)?, confidence: row.get(8)?,
-                created_at: row.get(9)?, updated_at: row.get(10)?, last_compiled_at: row.get(11)?,
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
                 source_message_id: row.get(12).unwrap_or(None),
             })
         })?;
@@ -2009,17 +2720,29 @@ impl Repository {
     }
 
     /// Get page summaries for Q&A retrieval, excluding qa-type pages.
-    pub fn get_wiki_page_summaries_for_qa(&self) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
-        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+    pub fn get_wiki_page_summaries_for_qa(
+        &self,
+    ) -> Result<Vec<(String, String, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
         let mut stmt = conn.prepare(
             "SELECT id, title, COALESCE(summary, substr(body_markdown, 1, 100))
-             FROM wiki_pages WHERE status = 'active' AND page_type != 'qa' ORDER BY title"
+             FROM wiki_pages WHERE status = 'active' AND page_type != 'qa' ORDER BY title",
         )?;
         let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
         })?;
         let mut results = Vec::new();
-        for row in rows { results.push(row?); }
+        for row in rows {
+            results.push(row?);
+        }
         Ok(results)
     }
 }

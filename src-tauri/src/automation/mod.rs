@@ -225,10 +225,7 @@ fn read_snapshot(db: &Arc<Database>) -> AutomationSnapshot {
 fn persist_initial_shown(db: &Arc<Database>) {
     let repo = Repository::new(db.clone());
     if let Err(e) = repo.update_setting(SETTING_INITIAL_PROMPT_SHOWN, "true") {
-        log::warn!(
-            "[automation] failed to persist initial_prompt_shown: {}",
-            e
-        );
+        log::warn!("[automation] failed to persist initial_prompt_shown: {}", e);
     }
 }
 

@@ -108,7 +108,10 @@ pub async fn call_gemini_api(
     if result.is_empty() {
         Err("Gemini API returned empty response".to_string())
     } else {
-        log::info!("Gemini API call successful, response length: {}", result.len());
+        log::info!(
+            "Gemini API call successful, response length: {}",
+            result.len()
+        );
         Ok(result)
     }
 }

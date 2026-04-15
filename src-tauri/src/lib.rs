@@ -7,12 +7,13 @@ pub mod locale;
 mod scheduler;
 mod storage;
 mod update;
+mod workspace;
 
 use capture::detector::CaptureDetector;
 use commands::capture::AppState;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{Manager, PhysicalPosition, PhysicalSize, WebviewWindow};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -78,7 +79,10 @@ pub fn run() {
                 crate::capture::ocr::init_ocr_binary_path(ocr_bin);
 
                 let yt_dlp_bin = resource_dir.join("yt-dlp_macos");
-                log::info!("[YouTube] Registered bundled yt-dlp at {}", yt_dlp_bin.display());
+                log::info!(
+                    "[YouTube] Registered bundled yt-dlp at {}",
+                    yt_dlp_bin.display()
+                );
                 crate::capture::url_reader::init_yt_dlp_binary_path(yt_dlp_bin);
             } else {
                 log::warn!("[OCR] Could not resolve resource_dir at startup");
@@ -189,10 +193,7 @@ pub fn run() {
             // surfaces to the user.
             {
                 let state: tauri::State<'_, AppState> = app.state();
-                crate::update::spawn_background_check(
-                    app.handle().clone(),
-                    state.db.clone(),
-                );
+                crate::update::spawn_background_check(app.handle().clone(), state.db.clone());
             }
 
             // --- Automation (Apple Events) permission guard ---
@@ -202,10 +203,7 @@ pub fn run() {
             // can surface a fix-it button.
             {
                 let state: tauri::State<'_, AppState> = app.state();
-                crate::automation::spawn_startup_check(
-                    app.handle().clone(),
-                    state.db.clone(),
-                );
+                crate::automation::spawn_startup_check(app.handle().clone(), state.db.clone());
             }
 
             Ok(())
@@ -230,6 +228,9 @@ pub fn run() {
             commands::preferences::get_settings,
             commands::preferences::update_setting,
             commands::preferences::check_xreader_status,
+            commands::workspace::get_workspace_paths,
+            commands::workspace::initialize_workspace_root,
+            commands::workspace::open_workspace_root,
             commands::digest::get_digest_items,
             commands::digest::digest_item,
             commands::mcp::get_mcp_status,
@@ -248,6 +249,14 @@ pub fn run() {
             commands::datahub::get_storage_info,
             commands::datahub::export_all_single,
             commands::datahub::export_range_single,
+            commands::datahub::render_selected_markdown,
+            commands::datahub::export_selected_single,
+            commands::datahub::open_content_file,
+            commands::datahub::pick_import_files,
+            commands::datahub::pick_import_directory,
+            commands::datahub::import_files,
+            commands::datahub::import_directory,
+            commands::datahub::sync_local_raw_directory,
             commands::datahub::open_data_folder,
             commands::attention::get_attention_insights,
             commands::attention::trigger_attention_analysis,
@@ -259,11 +268,14 @@ pub fn run() {
             commands::oauth::logout_gemini_oauth,
             commands::wiki::get_wiki_pages,
             commands::wiki::get_wiki_page,
+            commands::wiki::resolve_wiki_link,
             commands::wiki::search_wiki,
+            commands::wiki::get_page_themes,
             commands::wiki::get_wiki_stats,
             commands::wiki::delete_wiki_page,
             commands::wiki::get_wiki_graph,
             commands::wiki::compile_content_to_wiki,
+            commands::wiki::compile_contents_to_wiki,
             commands::wiki::trigger_wiki_auto_compile,
             commands::wiki::wiki_ask,
             commands::wiki::get_chat_sessions,
@@ -280,6 +292,7 @@ pub fn run() {
             commands::wiki::wiki_lint_recompile,
             commands::wiki::get_page_sources,
             commands::wiki::get_content_wiki_pages,
+            commands::wiki::sync_local_wiki,
             update::check_for_update_manual,
             update::dismiss_update_version,
             update::set_update_check_enabled,
@@ -474,10 +487,56 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn rects_intersect(
+    a_pos: PhysicalPosition<i32>,
+    a_size: PhysicalSize<u32>,
+    b_pos: PhysicalPosition<i32>,
+    b_size: PhysicalSize<u32>,
+) -> bool {
+    let a_right = a_pos.x + a_size.width as i32;
+    let a_bottom = a_pos.y + a_size.height as i32;
+    let b_right = b_pos.x + b_size.width as i32;
+    let b_bottom = b_pos.y + b_size.height as i32;
+
+    a_pos.x < b_right && a_right > b_pos.x && a_pos.y < b_bottom && a_bottom > b_pos.y
+}
+
+fn ensure_window_visible(win: &WebviewWindow) {
+    let Ok(position) = win.outer_position() else {
+        return;
+    };
+    let Ok(size) = win.outer_size() else {
+        return;
+    };
+    let Ok(monitors) = win.available_monitors() else {
+        let _ = win.center();
+        return;
+    };
+
+    if monitors.is_empty() {
+        let _ = win.center();
+        return;
+    }
+
+    let is_visible = monitors.into_iter().any(|monitor| {
+        rects_intersect(
+            position,
+            size,
+            monitor.position().clone(),
+            monitor.size().clone(),
+        )
+    });
+
+    if !is_visible {
+        let _ = win.center();
+    }
+}
+
 fn show_main_window(app: &tauri::AppHandle, tab: Option<&str>) {
     use tauri::Emitter;
 
     if let Some(win) = app.get_webview_window("main") {
+        ensure_window_visible(&win);
         let _ = win.show();
         let _ = win.set_focus();
         if let Some(tab) = tab {

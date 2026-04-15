@@ -81,9 +81,7 @@ fn main() {
     // Both binaries are bundled as Tauri resources — see tauri.conf.json.
     #[cfg(target_os = "macos")]
     {
-        let manifest_dir = std::path::PathBuf::from(
-            std::env::var("CARGO_MANIFEST_DIR").unwrap(),
-        );
+        let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
 
         ensure_yt_dlp_bundled(&manifest_dir);
 
@@ -101,12 +99,10 @@ fn main() {
         // a watcher loop in `tauri dev`: write bin → watcher sees change →
         // restart cargo → build.rs runs → write bin → ... (infinite loop).
         let needs_rebuild = match (swift_src.metadata(), swift_bin.metadata()) {
-            (Ok(src_meta), Ok(bin_meta)) => {
-                match (src_meta.modified(), bin_meta.modified()) {
-                    (Ok(src_time), Ok(bin_time)) => src_time > bin_time,
-                    _ => true,
-                }
-            }
+            (Ok(src_meta), Ok(bin_meta)) => match (src_meta.modified(), bin_meta.modified()) {
+                (Ok(src_time), Ok(bin_time)) => src_time > bin_time,
+                _ => true,
+            },
             _ => true,
         };
 
@@ -122,7 +118,10 @@ fn main() {
 
             match status {
                 Ok(s) if s.success() => {
-                    println!("cargo:warning=Pre-compiled OCR Swift binary -> {}", swift_bin.display());
+                    println!(
+                        "cargo:warning=Pre-compiled OCR Swift binary -> {}",
+                        swift_bin.display()
+                    );
                 }
                 Ok(s) => {
                     panic!("swiftc exited with status {} while compiling OCR helper", s);

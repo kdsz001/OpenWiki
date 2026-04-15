@@ -478,9 +478,8 @@ impl UrlReader {
 
         // Step 2: Use yt-dlp to download captions (supports VTT and srv1 formats)
         // Unique tmp dir per invocation to avoid concurrent collisions
-        let tmp_dir = std::env::temp_dir().join(format!(
-            "openwiki_yt_{}_{}", video_id, std::process::id()
-        ));
+        let tmp_dir =
+            std::env::temp_dir().join(format!("openwiki_yt_{}_{}", video_id, std::process::id()));
         let _ = std::fs::create_dir_all(&tmp_dir);
         let out_template = tmp_dir.join("sub");
 
@@ -509,8 +508,8 @@ impl UrlReader {
 
         #[cfg(debug_assertions)]
         let dev_mode_bundled = || {
-            let src_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("resources/yt-dlp_macos");
+            let src_path =
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/yt-dlp_macos");
             if src_path.exists() {
                 Some(src_path.to_string_lossy().into_owned())
             } else {
@@ -520,22 +519,20 @@ impl UrlReader {
         #[cfg(not(debug_assertions))]
         let dev_mode_bundled = || -> Option<String> { None };
 
-        let yt_dlp_bin = bundled_yt_dlp
-            .or_else(dev_mode_bundled)
-            .unwrap_or_else(|| {
-                let yt_dlp_candidates = vec![
-                    format!("{}/anaconda3/bin/yt-dlp", home),
-                    format!("{}/miniconda3/bin/yt-dlp", home),
-                    format!("{}/.local/bin/yt-dlp", home),
-                    "/usr/local/bin/yt-dlp".to_string(),
-                    "/opt/homebrew/bin/yt-dlp".to_string(),
-                ];
-                yt_dlp_candidates
-                    .iter()
-                    .find(|p| std::path::Path::new(p).exists())
-                    .cloned()
-                    .unwrap_or_else(|| "yt-dlp".to_string())
-            });
+        let yt_dlp_bin = bundled_yt_dlp.or_else(dev_mode_bundled).unwrap_or_else(|| {
+            let yt_dlp_candidates = vec![
+                format!("{}/anaconda3/bin/yt-dlp", home),
+                format!("{}/miniconda3/bin/yt-dlp", home),
+                format!("{}/.local/bin/yt-dlp", home),
+                "/usr/local/bin/yt-dlp".to_string(),
+                "/opt/homebrew/bin/yt-dlp".to_string(),
+            ];
+            yt_dlp_candidates
+                .iter()
+                .find(|p| std::path::Path::new(p).exists())
+                .cloned()
+                .unwrap_or_else(|| "yt-dlp".to_string())
+        });
 
         log::info!("[YouTube] Using yt-dlp binary: {}", yt_dlp_bin);
 
@@ -604,26 +601,21 @@ impl UrlReader {
             let yt_dlp_future = cmd.output();
 
             // 60s timeout to prevent yt-dlp from hanging (e.g. EJS download stall)
-            let output = match tokio::time::timeout(
-                std::time::Duration::from_secs(60),
-                yt_dlp_future,
-            )
-            .await
-            {
-                Ok(result) => result.map_err(|e| {
-                    format!(
-                        "yt-dlp not found or failed: {}. Please install: pip3 install yt-dlp",
-                        e
-                    )
-                })?,
-                Err(_) => {
-                    log::warn!("[YouTube] yt-dlp timed out after 60s");
-                    let _ = std::fs::remove_dir_all(&tmp_dir);
-                    return Err(
-                        "YouTube 字幕提取超时（60秒），请稍后再试".to_string()
-                    );
-                }
-            };
+            let output =
+                match tokio::time::timeout(std::time::Duration::from_secs(60), yt_dlp_future).await
+                {
+                    Ok(result) => result.map_err(|e| {
+                        format!(
+                            "yt-dlp not found or failed: {}. Please install: pip3 install yt-dlp",
+                            e
+                        )
+                    })?,
+                    Err(_) => {
+                        log::warn!("[YouTube] yt-dlp timed out after 60s");
+                        let _ = std::fs::remove_dir_all(&tmp_dir);
+                        return Err("YouTube 字幕提取超时（60秒），请稍后再试".to_string());
+                    }
+                };
 
             last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
             if !output.status.success() {
@@ -633,14 +625,12 @@ impl UrlReader {
             // Check if subtitle file was downloaded (support both .vtt and .srv1)
             let has_sub = std::fs::read_dir(&tmp_dir)
                 .map(|entries| {
-                    entries
-                        .filter_map(|e| e.ok())
-                        .any(|e| {
-                            e.path()
-                                .extension()
-                                .map(|x| x == "vtt" || x == "srv1")
-                                .unwrap_or(false)
-                        })
+                    entries.filter_map(|e| e.ok()).any(|e| {
+                        e.path()
+                            .extension()
+                            .map(|x| x == "vtt" || x == "srv1")
+                            .unwrap_or(false)
+                    })
                 })
                 .unwrap_or(false);
 
@@ -693,7 +683,11 @@ impl UrlReader {
                     .unwrap_or("unknown")
                     .to_string();
                 let content = std::fs::read_to_string(&path).unwrap_or_default();
-                log::info!("[YouTube] Found subtitle file: {} (format: {})", path.display(), fmt);
+                log::info!(
+                    "[YouTube] Found subtitle file: {} (format: {})",
+                    path.display(),
+                    fmt
+                );
                 (content, fmt)
             }
             None => (String::new(), String::new()),
@@ -704,12 +698,8 @@ impl UrlReader {
 
         // Error classification — distinguish "blocked" from "genuinely no subtitles"
         if sub_content.is_empty() {
-            if last_stderr.contains("Sign in to confirm")
-                || last_stderr.contains("sign in")
-            {
-                return Err(
-                    "YouTube 需要登录验证，无法提取字幕。请稍后再试".to_string(),
-                );
+            if last_stderr.contains("Sign in to confirm") || last_stderr.contains("sign in") {
+                return Err("YouTube 需要登录验证，无法提取字幕。请稍后再试".to_string());
             }
             if last_stderr.contains("No supported JavaScript runtime") {
                 return Err(
@@ -717,9 +707,7 @@ impl UrlReader {
                 );
             }
             if last_stderr.contains("429") || last_stderr.contains("Too Many Requests") {
-                return Err(
-                    "YouTube 请求被限流（429），请稍后再试".to_string(),
-                );
+                return Err("YouTube 请求被限流（429），请稍后再试".to_string());
             }
 
             // No blocking error — genuinely no subtitles, use title/description fallback
@@ -760,10 +748,8 @@ impl UrlReader {
 
         if sub_format == "srv1" {
             // Parse XML (srv1) format: <text start="..." dur="...">...</text>
-            let re_text = Regex::new(
-                r#"<text\s+start="([^"]+)"\s+dur="([^"]+)"[^>]*>(.*?)</text>"#,
-            )
-            .unwrap();
+            let re_text =
+                Regex::new(r#"<text\s+start="([^"]+)"\s+dur="([^"]+)"[^>]*>(.*?)</text>"#).unwrap();
             for cap in re_text.captures_iter(&sub_content) {
                 let start: f64 = cap
                     .get(1)
@@ -833,8 +819,7 @@ impl UrlReader {
                     // Flush previous cue
                     if let (Some(start), Some(end)) = (cur_start, cur_end) {
                         let text = cur_texts.join(" ");
-                        let clean =
-                            re_html_tags.replace_all(&text, "").trim().to_string();
+                        let clean = re_html_tags.replace_all(&text, "").trim().to_string();
                         if !clean.is_empty() {
                             snippets.push(Snippet {
                                 start,
@@ -845,14 +830,38 @@ impl UrlReader {
                     }
 
                     // Parse new timestamps: HH:MM:SS.mmm --> HH:MM:SS.mmm
-                    let h1: f64 = cap.get(1).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let m1: f64 = cap.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let s1: f64 = cap.get(3).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let ms1: f64 = cap.get(4).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let h2: f64 = cap.get(5).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let m2: f64 = cap.get(6).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let s2: f64 = cap.get(7).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
-                    let ms2: f64 = cap.get(8).and_then(|m| m.as_str().parse().ok()).unwrap_or(0.0);
+                    let h1: f64 = cap
+                        .get(1)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let m1: f64 = cap
+                        .get(2)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let s1: f64 = cap
+                        .get(3)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let ms1: f64 = cap
+                        .get(4)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let h2: f64 = cap
+                        .get(5)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let m2: f64 = cap
+                        .get(6)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let s2: f64 = cap
+                        .get(7)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
+                    let ms2: f64 = cap
+                        .get(8)
+                        .and_then(|m| m.as_str().parse().ok())
+                        .unwrap_or(0.0);
 
                     cur_start = Some(h1 * 3600.0 + m1 * 60.0 + s1 + ms1 / 1000.0);
                     cur_end = Some(h2 * 3600.0 + m2 * 60.0 + s2 + ms2 / 1000.0);
@@ -1714,7 +1723,9 @@ fn strip_html_to_text(html: &str) -> String {
     let mut in_aside = false;
 
     for ch in content_html.chars() {
-        if result.len() >= MAX_CONTENT_LENGTH { break; }
+        if result.len() >= MAX_CONTENT_LENGTH {
+            break;
+        }
 
         if ch == '<' {
             in_tag = true;
@@ -1728,18 +1739,31 @@ fn strip_html_to_text(html: &str) -> String {
                 in_tag = false;
                 let tag_lower = tag_buf.to_lowercase();
                 // Track skip zones
-                if tag_lower.starts_with("<nav") { in_nav = true; }
-                else if tag_lower.starts_with("</nav") { in_nav = false; }
-                else if tag_lower.starts_with("<header") { in_header = true; }
-                else if tag_lower.starts_with("</header") { in_header = false; }
-                else if tag_lower.starts_with("<footer") { in_footer = true; }
-                else if tag_lower.starts_with("</footer") { in_footer = false; }
-                else if tag_lower.starts_with("<aside") { in_aside = true; }
-                else if tag_lower.starts_with("</aside") { in_aside = false; }
-                else if tag_lower.starts_with("<script") { in_script = true; }
-                else if tag_lower.starts_with("</script") { in_script = false; }
-                else if tag_lower.starts_with("<style") { in_style = true; }
-                else if tag_lower.starts_with("</style") { in_style = false; }
+                if tag_lower.starts_with("<nav") {
+                    in_nav = true;
+                } else if tag_lower.starts_with("</nav") {
+                    in_nav = false;
+                } else if tag_lower.starts_with("<header") {
+                    in_header = true;
+                } else if tag_lower.starts_with("</header") {
+                    in_header = false;
+                } else if tag_lower.starts_with("<footer") {
+                    in_footer = true;
+                } else if tag_lower.starts_with("</footer") {
+                    in_footer = false;
+                } else if tag_lower.starts_with("<aside") {
+                    in_aside = true;
+                } else if tag_lower.starts_with("</aside") {
+                    in_aside = false;
+                } else if tag_lower.starts_with("<script") {
+                    in_script = true;
+                } else if tag_lower.starts_with("</script") {
+                    in_script = false;
+                } else if tag_lower.starts_with("<style") {
+                    in_style = true;
+                } else if tag_lower.starts_with("</style") {
+                    in_style = false;
+                }
                 // Block-level tags → newline
                 if tag_lower.starts_with("<br")
                     || tag_lower.starts_with("</p")

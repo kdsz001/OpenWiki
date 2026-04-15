@@ -1,5 +1,5 @@
-use crate::ai::oauth;
 use crate::ai::gemini_oauth;
+use crate::ai::oauth;
 use crate::commands::capture::AppState;
 use tauri::State;
 
@@ -15,7 +15,9 @@ pub async fn start_openai_oauth(state: State<'_, AppState>) -> Result<oauth::OAu
 }
 
 #[tauri::command]
-pub async fn get_openai_oauth_status(state: State<'_, AppState>) -> Result<oauth::OAuthStatus, String> {
+pub async fn get_openai_oauth_status(
+    state: State<'_, AppState>,
+) -> Result<oauth::OAuthStatus, String> {
     let valid = oauth::get_valid_token(state.db.clone()).await;
     match valid {
         Some(_) => {
@@ -27,10 +29,18 @@ pub async fn get_openai_oauth_status(state: State<'_, AppState>) -> Result<oauth
                     expires_at: Some(token.expires_at),
                 })
             } else {
-                Ok(oauth::OAuthStatus { logged_in: false, email: None, expires_at: None })
+                Ok(oauth::OAuthStatus {
+                    logged_in: false,
+                    email: None,
+                    expires_at: None,
+                })
             }
         }
-        None => Ok(oauth::OAuthStatus { logged_in: false, email: None, expires_at: None }),
+        None => Ok(oauth::OAuthStatus {
+            logged_in: false,
+            email: None,
+            expires_at: None,
+        }),
     }
 }
 
@@ -42,7 +52,9 @@ pub async fn logout_openai_oauth(state: State<'_, AppState>) -> Result<(), Strin
 }
 
 #[tauri::command]
-pub async fn start_gemini_oauth(state: State<'_, AppState>) -> Result<gemini_oauth::GeminiOAuthStatus, String> {
+pub async fn start_gemini_oauth(
+    state: State<'_, AppState>,
+) -> Result<gemini_oauth::GeminiOAuthStatus, String> {
     let token = gemini_oauth::start_gemini_oauth_login().await?;
     gemini_oauth::save_token(state.db.clone(), &token).await;
     Ok(gemini_oauth::GeminiOAuthStatus {
@@ -53,7 +65,9 @@ pub async fn start_gemini_oauth(state: State<'_, AppState>) -> Result<gemini_oau
 }
 
 #[tauri::command]
-pub async fn get_gemini_oauth_status(state: State<'_, AppState>) -> Result<gemini_oauth::GeminiOAuthStatus, String> {
+pub async fn get_gemini_oauth_status(
+    state: State<'_, AppState>,
+) -> Result<gemini_oauth::GeminiOAuthStatus, String> {
     let valid = gemini_oauth::get_valid_token(state.db.clone()).await;
     match valid {
         Some(_) => {
@@ -65,10 +79,18 @@ pub async fn get_gemini_oauth_status(state: State<'_, AppState>) -> Result<gemin
                     expires_at: Some(token.expires_at),
                 })
             } else {
-                Ok(gemini_oauth::GeminiOAuthStatus { logged_in: false, email: None, expires_at: None })
+                Ok(gemini_oauth::GeminiOAuthStatus {
+                    logged_in: false,
+                    email: None,
+                    expires_at: None,
+                })
             }
         }
-        None => Ok(gemini_oauth::GeminiOAuthStatus { logged_in: false, email: None, expires_at: None }),
+        None => Ok(gemini_oauth::GeminiOAuthStatus {
+            logged_in: false,
+            email: None,
+            expires_at: None,
+        }),
     }
 }
 

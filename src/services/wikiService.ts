@@ -26,8 +26,16 @@ export async function getWikiPage(id: string): Promise<WikiPage | null> {
   return invoke("get_wiki_page", { id });
 }
 
+export async function resolveWikiLink(target: string): Promise<WikiPage | null> {
+  return invoke("resolve_wiki_link", { target });
+}
+
 export async function searchWiki(query: string): Promise<WikiPage[]> {
   return invoke("search_wiki", { query });
+}
+
+export async function getPageThemes(pageId: string): Promise<WikiPage[]> {
+  return invoke("get_page_themes", { pageId });
 }
 
 export async function getWikiStats(): Promise<WikiStats> {
@@ -50,12 +58,36 @@ export async function compileContentToWiki(contentId: string): Promise<string[]>
   return invoke("compile_content_to_wiki", { contentId });
 }
 
+export async function compileContentsToWiki(contentIds: string[]): Promise<{
+  processed: number;
+  compiled: number;
+  failed: number;
+  touched_pages: number;
+  page_ids: string[];
+}> {
+  return invoke("compile_contents_to_wiki", { contentIds });
+}
+
 export async function triggerWikiAutoCompile(): Promise<{
   processed: number;
   compiled: number;
   errors: number;
+  up_to_date: number;
+  remaining: number;
 }> {
   return invoke("trigger_wiki_auto_compile");
+}
+
+export async function syncLocalWiki(path: string): Promise<{
+  root: string;
+  pages_found: number;
+  created: number;
+  updated: number;
+  removed: number;
+  edges_created: number;
+  counts: Record<string, number>;
+}> {
+  return invoke("sync_local_wiki", { path });
 }
 
 // ===== Q&A (multi-turn chat) =====

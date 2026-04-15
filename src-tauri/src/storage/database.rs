@@ -147,9 +147,7 @@ impl Database {
 
         // Migration 008: Add wiki tables
         let has_wiki_pages: bool = conn
-            .prepare(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'",
-            )?
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'")?
             .query_row([], |row| row.get::<_, i32>(0))
             .map(|count| count > 0)
             .unwrap_or(false);
@@ -256,7 +254,9 @@ impl Database {
                 )?;
             }
             let has_wiki: bool = conn
-                .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'")
+                .prepare(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'",
+                )
                 .and_then(|mut s| s.query_row([], |row| row.get::<_, i32>(0)))
                 .map(|c| c > 0)
                 .unwrap_or(false);
@@ -266,6 +266,54 @@ impl Database {
                 )?;
             }
             log::info!("Migration 013 applied: added locale columns");
+        }
+
+        // Migration 014: Add attention batch cache table
+        let has_attention_batch_cache: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='attention_batch_cache'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_attention_batch_cache {
+            let migration_014 = include_str!("migrations/014_add_attention_batch_cache.sql");
+            conn.execute_batch(migration_014)?;
+            log::info!("Migration 014 applied: added attention_batch_cache table");
+        }
+
+        // Migration 015: Add structured concept candidate cache for imported content
+        let has_content_concept_candidates: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='content_concept_candidates'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_content_concept_candidates {
+            let migration_015 = include_str!("migrations/015_add_content_concept_candidates.sql");
+            conn.execute_batch(migration_015)?;
+            log::info!("Migration 015 applied: added content concept candidates table");
+        }
+
+        let malformed_byte_size_count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM captured_content WHERE typeof(byte_size) = 'text'")?
+            .query_row([], |row| row.get(0))
+            .unwrap_or(0);
+
+        if malformed_byte_size_count > 0 {
+            conn.execute(
+                "UPDATE captured_content
+                 SET byte_size = LENGTH(COALESCE(raw_text, ''))
+                 WHERE typeof(byte_size) = 'text'",
+                [],
+            )?;
+            log::info!(
+                "Migration repair applied: normalized {} malformed byte_size values",
+                malformed_byte_size_count
+            );
         }
 
         log::info!("Database migrations completed successfully");

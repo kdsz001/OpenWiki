@@ -56,6 +56,13 @@
     "reanalyze": "Re-analyze",
     "updating": "Updating analysis...",
     "analyzing": "Deeply analyzing your content...",
+    "progress": {
+      "planning": "Auto-sampling {{selected}} / {{total}} items for this run, estimated {{batches}} batches",
+      "thinking": "Preparing analysis ({{selected}} / {{total}} items)",
+      "batching": "Analyzing batch {{current}} / {{total}} ({{selected}} sampled items)",
+      "aggregating": "Batch analysis complete, aggregating {{total}} batch results",
+      "generating": "Generating the final report"
+    },
     "emptyNeedApiKey": {
       "title": "AI service not configured",
       "desc": "Insight reports require an AI service to analyze your content"
@@ -69,7 +76,7 @@
       "desc": "No concentrated direction found. Keep saving — new patterns may emerge next time."
     },
     "stats": {
-      "savedItems": "Saved Items",
+      "savedItems": "Analysis Sample",
       "activeDays": "Active Days",
       "annotated": "Annotated",
       "annotationRate": "Annotation Rate",

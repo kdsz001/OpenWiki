@@ -86,7 +86,11 @@ Each section must be one of the following types:
 /// Build the user message for weekly report generation.
 /// `content_summaries` - formatted list of this week's saved content
 /// `user_interests` - text summary of user preference topics
-pub fn weekly_report_user_message(content_summaries: &str, user_interests: &str, locale: &str) -> String {
+pub fn weekly_report_user_message(
+    content_summaries: &str,
+    user_interests: &str,
+    locale: &str,
+) -> String {
     if crate::locale::is_english(locale) {
         let interests_section = if user_interests.is_empty() {
             "No preference data available — analyze all content equally.".to_string()
@@ -164,7 +168,12 @@ Notes:
 
 /// Prompt for summarizing a single content item before feeding into the weekly report.
 /// Used to truncate and summarize long content items.
-pub fn content_summarize_prompt(raw_text: &str, content_type: &str, source_app: &str, locale: &str) -> String {
+pub fn content_summarize_prompt(
+    raw_text: &str,
+    content_type: &str,
+    source_app: &str,
+    locale: &str,
+) -> String {
     if crate::locale::is_english(locale) {
         format!(
             r#"Summarize the core information of the following content in under 30 words.
@@ -277,7 +286,9 @@ pub fn format_content_item(
     locale: &str,
 ) -> String {
     if crate::locale::is_english(locale) {
-        format!("- [ID: {id}] [{content_type}] from \"{source_app}\" ({captured_at}): {text_preview}")
+        format!(
+            "- [ID: {id}] [{content_type}] from \"{source_app}\" ({captured_at}): {text_preview}"
+        )
     } else {
         format!("- [ID: {id}] [{content_type}] 来自「{source_app}」({captured_at}): {text_preview}")
     }

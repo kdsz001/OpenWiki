@@ -179,7 +179,8 @@ pub fn compile_discover_user_message(
 
         parts.push("\n=== Existing Knowledge Page Index ===".to_string());
         if existing_pages.is_empty() {
-            parts.push("(Knowledge base is empty — this is the first piece of content)".to_string());
+            parts
+                .push("(Knowledge base is empty — this is the first piece of content)".to_string());
         } else {
             for (id, title, summary) in existing_pages {
                 let s = if summary.is_empty() {
@@ -351,7 +352,10 @@ pub fn compile_execute_update_message(
     if crate::locale::is_english(locale) {
         let mut parts = vec![
             format!("Action: Update existing page \"{}\"", existing_title),
-            format!("Current source status: {} active sources, {} stale sources", active_source_count, stale_source_count),
+            format!(
+                "Current source status: {} active sources, {} stale sources",
+                active_source_count, stale_source_count
+            ),
         ];
         if !content_summary.is_empty() {
             parts.push(format!("New content summary: {}", content_summary));
@@ -359,14 +363,23 @@ pub fn compile_execute_update_message(
         if !user_note.is_empty() {
             parts.push(format!("User note: {}", user_note));
         }
-        parts.push(format!("\nNew content original text:\n{}", content_truncated));
+        parts.push(format!(
+            "\nNew content original text:\n{}",
+            content_truncated
+        ));
         parts.push(format!("\nCurrent page body:\n{}", body_truncated));
-        parts.push("\nUpdate the page with the new content, preserving still-valid existing information.".to_string());
+        parts.push(
+            "\nUpdate the page with the new content, preserving still-valid existing information."
+                .to_string(),
+        );
         parts.join("\n")
     } else {
         let mut parts = vec![
             format!("操作: 更新已有页面「{}」", existing_title),
-            format!("当前来源状态: {} 个活跃来源, {} 个过时来源", active_source_count, stale_source_count),
+            format!(
+                "当前来源状态: {} 个活跃来源, {} 个过时来源",
+                active_source_count, stale_source_count
+            ),
         ];
         if !content_summary.is_empty() {
             parts.push(format!("新内容摘要: {}", content_summary));
@@ -501,7 +514,7 @@ source_mode 取值：
 - "knowledge_base": 回答完全基于知识库内容
 - "mixed": 主要基于知识库，部分由 AI 补充
 - "ai_only": 知识库无相关内容，完全由 AI 回答"##
-        .to_string()
+            .to_string()
     }
 }
 
@@ -524,7 +537,9 @@ pub fn query_answer_user_message(
             parts.push("\n=== Relevant Knowledge Pages (full text) ===".to_string());
             let mut budget = 8000i64;
             for (id, title, body) in relevant_pages {
-                if budget <= 0 { break; }
+                if budget <= 0 {
+                    break;
+                }
                 let take = (budget as usize).min(body.chars().count());
                 let body_truncated: String = body.chars().take(take).collect();
                 parts.push(format!("\n--- [{}] {} ---\n{}", id, title, body_truncated));
@@ -533,7 +548,9 @@ pub fn query_answer_user_message(
         }
 
         if !page_overview.is_empty() {
-            parts.push("\n=== Knowledge Base Overview (all page titles and summaries) ===".to_string());
+            parts.push(
+                "\n=== Knowledge Base Overview (all page titles and summaries) ===".to_string(),
+            );
             for (id, title, summary) in page_overview {
                 if summary.is_empty() {
                     parts.push(format!("[{}] {}", id, title));
@@ -554,7 +571,9 @@ pub fn query_answer_user_message(
             parts.push("\n=== 相关知识页面（全文） ===".to_string());
             let mut budget = 8000i64;
             for (id, title, body) in relevant_pages {
-                if budget <= 0 { break; }
+                if budget <= 0 {
+                    break;
+                }
                 let take = (budget as usize).min(body.chars().count());
                 let body_truncated: String = body.chars().take(take).collect();
                 parts.push(format!("\n--- [{}] {} ---\n{}", id, title, body_truncated));

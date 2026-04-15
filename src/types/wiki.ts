@@ -1,4 +1,13 @@
-export type WikiPageType = "concept" | "entity" | "source" | "comparison" | "overview" | "qa";
+export type WikiPageType =
+  | "concept"
+  | "entity"
+  | "source"
+  | "comparison"
+  | "overview"
+  | "case"
+  | "theme"
+  | "dashboard"
+  | "qa";
 export type WikiPageStatus = "active" | "needs_recompile" | "draft" | "archived";
 export type WikiEdgeRelation = "related" | "part_of" | "contradicts" | "extends" | "compares";
 
@@ -15,6 +24,7 @@ export interface WikiPage {
   created_at: string;
   updated_at: string;
   last_compiled_at?: string;
+  source_message_id?: string | null;
 }
 
 export interface WikiPageSource {

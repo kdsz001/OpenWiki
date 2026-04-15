@@ -45,7 +45,11 @@ pub async fn generate_weekly_report(
     provider: &str,
     model: &str,
 ) -> Result<WeeklyReport, String> {
-    log::info!("Generating weekly report, provider={}, model={}", provider, model);
+    log::info!(
+        "Generating weekly report, provider={}, model={}",
+        provider,
+        model
+    );
 
     // Resolve locale for prompts
     let locale = crate::locale::resolve_locale(&db);
@@ -159,7 +163,8 @@ pub async fn generate_weekly_report(
 
     // Step 6: Build the prompt
     let system_prompt = prompts::weekly_report_system_prompt(&locale);
-    let user_message = prompts::weekly_report_user_message(&content_summaries, &preference_summary, &locale);
+    let user_message =
+        prompts::weekly_report_user_message(&content_summaries, &preference_summary, &locale);
 
     // Step 7: Call the AI API
     let client = AiClient::new(api_key.to_string(), provider.to_string(), model.to_string());

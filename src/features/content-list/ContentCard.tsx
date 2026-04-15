@@ -15,10 +15,14 @@ import { useContentStore } from "../../stores/contentStore";
 import { useDataHubStore } from "../../stores/dataHubStore";
 import { ImagePreview } from "./ImagePreview";
 import type { WikiPage } from "../../types/wiki";
+import { openContentFile } from "../../services/dataHubService";
 
 interface ContentCardProps {
   content: CapturedContent;
   isHighlighted?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 function formatRelativeTime(dateStr: string, t: TFunction): string {
@@ -38,7 +42,13 @@ function formatRelativeTime(dateStr: string, t: TFunction): string {
 }
 
 export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
-  function ContentCard({ content, isHighlighted = false }, ref) {
+  function ContentCard({
+    content,
+    isHighlighted = false,
+    selectionMode = false,
+    selected = false,
+    onToggleSelect,
+  }, ref) {
   const { t } = useTranslation("content");
   const removeContent = useContentStore((s) => s.removeContent);
   const removeFromDataHub = useDataHubStore((s) => s.removeContent);
@@ -49,6 +59,7 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
   const [ocrState] = useState<"idle" | "running" | "done">("idle");
   const [ocrText] = useState<string | null>(null);
   const [wikiState, setWikiState] = useState<"idle" | "compiling" | "done">("idle");
+  const [openingSaved, setOpeningSaved] = useState(false);
   const [linkedWikiPages, setLinkedWikiPages] = useState<WikiPage[]>([]);
 
   const deleteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -104,6 +115,18 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
       console.error("Failed to copy:", e);
+    }
+  };
+
+  const handleOpenSaved = async () => {
+    if (openingSaved) return;
+    setOpeningSaved(true);
+    try {
+      await openContentFile(content.id);
+    } catch (e) {
+      console.error("Failed to open saved content:", e);
+    } finally {
+      setOpeningSaved(false);
     }
   };
 
@@ -172,15 +195,34 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
       <div
         ref={ref}
         className={`
-        group rounded-2xl transition-all duration-300
+        group rounded-2xl transition-all duration-300 relative
         ${isHighlighted
           ? "ring-2 ring-orange-300/60 dark:ring-orange-500/30 animate-highlight-fade"
+          : selected
+            ? "ring-2 ring-orange-400/70 dark:ring-orange-500/40"
           : deleteState !== "idle"
             ? "ring-1 ring-red-200/80 dark:ring-red-500/30"
             : "hover:translate-y-[-1px] hover:shadow-[0_12px_40px_rgba(249,115,22,0.12)] dark:hover:shadow-[0_12px_40px_rgba(0,0,0,0.3)]"
         }
         glass
       `}>
+        {selectionMode && onToggleSelect && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect();
+            }}
+            className={`absolute top-3 right-3 z-10 w-6 h-6 rounded-full border transition-all flex items-center justify-center
+              ${selected
+                ? "bg-orange-500 border-orange-500 text-white shadow-sm"
+                : "bg-white/90 dark:bg-slate-900/90 border-gray-200/80 dark:border-white/10 text-gray-400 dark:text-slate-500"
+              }`}
+            aria-label={selected ? t("card.unselect") : t("card.select")}
+          >
+            {selected ? "✓" : ""}
+          </button>
+        )}
         {/* Main content area */}
         <div className="px-5 pt-4 pb-3">
           <div className="flex gap-3.5 items-start">
@@ -372,6 +414,18 @@ export const ContentCard = forwardRef<HTMLDivElement, ContentCardProps>(
             </div>
 
             <div className="flex items-center gap-1">
+              {(content.image_path || content.raw_text || content.clean_content) && (
+                <button
+                  onClick={handleOpenSaved}
+                  disabled={openingSaved}
+                  className="px-2 py-1 rounded-md text-[11px] text-gray-400 dark:text-slate-500
+                             hover:text-orange-600 dark:hover:text-orange-400
+                             hover:bg-orange-500/10 dark:hover:bg-orange-500/15 transition-all
+                             disabled:opacity-60"
+                >
+                  {openingSaved ? "..." : t("card.openSaved")}
+                </button>
+              )}
               {hasSourceUrl && (
                 <button
                   onClick={() => content.source_url && open(content.source_url)}

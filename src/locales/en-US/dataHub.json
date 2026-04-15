@@ -39,6 +39,32 @@
     "exportedFiles": "Exported {{count}} files",
     "openInFinder": "Open in Finder"
   },
+  "import": {
+    "title": "Import Existing Notes",
+    "description": "Bring Markdown files, note folders, or plain-text notes into OpenWiki so you can sort, copy, and move them into the knowledge base in one step.",
+    "files": "Import files",
+    "folder": "Import folder",
+    "result": "Imported {{imported}}, skipped {{skipped}}, failed {{failed}}",
+    "addToKnowledge": "Add imported items to knowledge",
+    "addingToKnowledge": "Adding to knowledge...",
+    "addedToKnowledge": "Added to knowledge"
+  },
+  "selection": {
+    "enter": "Select items",
+    "done": "Done",
+    "count": "{{count}} selected",
+    "selectAll": "Select all",
+    "clearAll": "Clear",
+    "copySelected": "Copy selected",
+    "copying": "Copying...",
+    "copied": "Copied",
+    "exportSelected": "Export selected",
+    "exporting": "Exporting...",
+    "exported": "Exported",
+    "addToKnowledge": "Add to knowledge",
+    "compiling": "Adding...",
+    "compiled": "Added to knowledge"
+  },
   "weekday": {
     "sun": "Sun",
     "mon": "Mon",
