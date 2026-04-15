@@ -1,6 +1,7 @@
 use crate::capture::content::{compute_hash, detect_url};
 use crate::storage::database::Database;
 use crate::storage::models::{CaptureEvent, CapturedContent, ContentType};
+use crate::storage::repository::Repository;
 use chrono::Utc;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -19,6 +20,37 @@ pub struct AppState {
     pub pending_capture: Arc<Mutex<Option<serde_json::Value>>>,
     /// Temporarily suppresses macOS Reopen from pulling the main window forward.
     pub suppress_reopen_until: Arc<Mutex<Option<Instant>>>,
+}
+
+fn sync_workspace_inbox(repo: &Repository, content: &CapturedContent, context: &str) {
+    if let Err(error) = crate::workspace::sync_content_to_workspace_inbox(repo, content) {
+        log::warn!(
+            "Failed to mirror content {} into workspace inbox after {}: {}",
+            content.id,
+            context,
+            error
+        );
+    }
+}
+
+fn sync_workspace_raw(repo: &Repository, content: &CapturedContent, context: &str) {
+    if let Err(error) = crate::workspace::sync_content_to_workspace_raw(repo, content) {
+        log::warn!(
+            "Failed to mirror content {} into workspace raw after {}: {}",
+            content.id,
+            context,
+            error
+        );
+    }
+}
+
+fn refresh_workspace_content(repo: &Repository, content_id: &str, mirror_raw: bool, context: &str) {
+    if let Ok(Some(updated)) = repo.get_content_by_id(content_id) {
+        sync_workspace_inbox(repo, &updated, context);
+        if mirror_raw {
+            sync_workspace_raw(repo, &updated, context);
+        }
+    }
 }
 
 /// Get the captures directory, creating it if necessary.
@@ -185,7 +217,7 @@ pub fn save_content_auto(
     let source_url = detected_url.clone();
 
     // Check for duplicate content — if found, move it to the top by updating captured_at
-    let repo = crate::storage::repository::Repository::new(db.clone());
+    let repo = Repository::new(db.clone());
     if let Ok(Some(existing)) = repo.find_content_by_hash(&content_hash) {
         let _ = repo.touch_captured_at(&existing.id);
         log::info!(
@@ -223,6 +255,7 @@ pub fn save_content_auto(
     };
 
     repo.save_content(&content).map_err(|e| e.to_string())?;
+    sync_workspace_inbox(&repo, &content, "save");
 
     log::info!(
         "Content auto-saved: {} (type={}, size={} bytes)",
@@ -297,7 +330,7 @@ pub fn save_spotlight_content(
     source_app: String,
     user_note: String,
 ) -> Result<CapturedContent, String> {
-    let repo = crate::storage::repository::Repository::new(state.db.clone());
+    let repo = Repository::new(state.db.clone());
 
     let event = CaptureEvent {
         content_type,
@@ -333,6 +366,7 @@ pub fn save_spotlight_content(
         repo.update_user_note(&content.id, note_text)
             .map_err(|e| format!("Failed to save user note: {}", e))?;
         content.user_note = Some(note_text.clone());
+        sync_workspace_inbox(&repo, &content, "spotlight note update");
     }
 
     Ok(content)
@@ -341,7 +375,7 @@ pub fn save_spotlight_content(
 /// Find the most recently captured content item (used as fallback when
 /// spotlight save hits a duplicate from the clipboard watcher).
 fn find_existing_content(db: &Arc<Database>) -> Option<CapturedContent> {
-    let repo = crate::storage::repository::Repository::new(db.clone());
+    let repo = Repository::new(db.clone());
     // Get the most recent item — it's almost certainly the one just auto-saved
     repo.get_all_content(1, 0)
         .ok()
@@ -388,12 +422,13 @@ pub fn confirm_capture(
     if let Some(ref note) = user_note {
         let note = note.trim();
         if !note.is_empty() {
-            let repo = crate::storage::repository::Repository::new(state.db.clone());
+            let repo = Repository::new(state.db.clone());
             if let Err(e) = repo.update_user_note(&content.id, note) {
                 log::error!("Failed to save user note: {}", e);
             } else {
                 content.user_note = Some(note.to_string());
                 log::info!("User note saved for {}: {}", content.id, note);
+                sync_workspace_inbox(&repo, &content, "bubble note update");
             }
         }
     }
@@ -425,7 +460,7 @@ pub fn get_contents_by_ids(
     state: State<'_, AppState>,
     ids: Vec<String>,
 ) -> Result<Vec<CapturedContent>, String> {
-    let repo = crate::storage::repository::Repository::new(state.db.clone());
+    let repo = Repository::new(state.db.clone());
     let mut results = Vec::new();
     for id in &ids {
         match repo.get_content_by_id(id) {
@@ -503,10 +538,11 @@ pub async fn retry_url_fetch(
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
                 let db_for_summary = db.clone();
-                let repo = crate::storage::repository::Repository::new(db);
+                let repo = Repository::new(db);
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
                     log::error!("Failed to update URL content on retry: {}", e);
                 } else {
+                    refresh_workspace_content(&repo, &content_id, false, "url retry");
                     log::info!(
                         "URL retry succeeded for {}: {} chars",
                         content_id,
@@ -555,7 +591,7 @@ pub async fn retry_url_fetch(
 #[tauri::command]
 pub async fn ocr_image(state: State<'_, AppState>, content_id: String) -> Result<String, String> {
     let db = state.db.clone();
-    let repo = crate::storage::repository::Repository::new(db.clone());
+    let repo = Repository::new(db.clone());
 
     // Find the content record
     let content = repo
@@ -586,6 +622,7 @@ pub async fn ocr_image(state: State<'_, AppState>, content_id: String) -> Result
     // Save OCR text to database
     repo.update_raw_text(&content_id, &text)
         .map_err(|e| format!("Failed to save OCR text: {}", e))?;
+    refresh_workspace_content(&repo, &content_id, false, "ocr");
 
     log::info!("[OCR] Saved {} chars for {}", text.len(), content_id);
     Ok(text)
@@ -624,10 +661,11 @@ fn spawn_auto_ocr(app: &tauri::AppHandle, db: &Arc<Database>, content: &Captured
         {
             Ok(Ok(text)) => {
                 let db_for_summary = db_clone.clone();
-                let repo = crate::storage::repository::Repository::new(db_clone);
+                let repo = Repository::new(db_clone);
                 if let Err(e) = repo.update_raw_text(&content_id, &text) {
                     log::error!("[OCR] Failed to save: {}", e);
                 } else {
+                    refresh_workspace_content(&repo, &content_id, false, "auto ocr");
                     log::info!(
                         "[OCR] Auto-OCR done for {}: {} chars",
                         content_id,
@@ -688,10 +726,11 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
                 let db_for_summary = db_clone.clone();
-                let repo = crate::storage::repository::Repository::new(db_clone);
+                let repo = Repository::new(db_clone);
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
                     log::error!("Failed to update URL content: {}", e);
                 } else {
+                    refresh_workspace_content(&repo, &content_id, false, "url fetch");
                     log::info!(
                         "URL fetched for {}: {} chars",
                         content_id,
@@ -748,7 +787,7 @@ pub fn spawn_summary_task(
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let repo = crate::storage::repository::Repository::new(db.clone());
+        let repo = Repository::new(db.clone());
 
         // Helper: trigger wiki auto-compile after summary is saved
         let maybe_wiki_compile = |db_ref: std::sync::Arc<crate::storage::database::Database>, cid: String| {
@@ -857,6 +896,7 @@ pub fn spawn_summary_task(
                                 &tags_str,
                                 &digest,
                             );
+                            refresh_workspace_content(&repo, &content_id, true, "oauth summary");
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
                             log::info!(
@@ -887,7 +927,13 @@ pub fn spawn_summary_task(
                         let (summary, tags, digest) = extract_summary_tags_digest(&raw);
                         if !summary.is_empty() {
                             let tags_str = tags.join(",");
-                            let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
+                            let _ = repo.update_summary_and_tags(
+                                &content_id,
+                                &summary,
+                                &tags_str,
+                                &digest,
+                            );
+                            refresh_workspace_content(&repo, &content_id, true, "gemini summary");
                             let _ = app.emit("content-summary-ready", &content_id);
                             maybe_wiki_compile(db.clone(), content_id.clone());
                             log::info!("Summary generated for {}: [{}] {}", content_id, tags_str, summary);
@@ -917,6 +963,7 @@ pub fn spawn_summary_task(
                 if !summary.is_empty() {
                     let tags_str = tags.join(",");
                     let _ = repo.update_summary_and_tags(&content_id, &summary, &tags_str, &digest);
+                    refresh_workspace_content(&repo, &content_id, true, "api summary");
                     let _ = app.emit("content-summary-ready", &content_id);
                     maybe_wiki_compile(db.clone(), content_id.clone());
                     log::info!(
@@ -1019,7 +1066,7 @@ pub fn spawn_clean_content_task(
     }
 
     tauri::async_runtime::spawn(async move {
-        let repo = crate::storage::repository::Repository::new(db.clone());
+        let repo = Repository::new(db.clone());
 
         let locale = crate::locale::resolve_locale(&db);
 
@@ -1165,6 +1212,7 @@ fn save_clean_content(
     }
     match repo.update_clean_content(content_id, stripped) {
         Ok(()) => {
+            refresh_workspace_content(repo, content_id, true, "clean content");
             let _ = app.emit("content:clean-ready", content_id);
             log::info!("Clean content saved for {} ({} chars)", content_id, stripped.len());
             // Trigger wiki recompile with the now-clean content

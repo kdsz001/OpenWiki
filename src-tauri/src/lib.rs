@@ -7,6 +7,7 @@ pub mod locale;
 mod scheduler;
 mod storage;
 mod update;
+mod workspace;
 
 use capture::detector::CaptureDetector;
 use commands::capture::AppState;
@@ -237,6 +238,7 @@ pub fn run() {
             commands::datahub::set_export_dir,
             commands::datahub::open_export_dir,
             commands::datahub::get_storage_info,
+            commands::datahub::sync_local_raw_directory,
             commands::datahub::export_all_single,
             commands::datahub::export_range_single,
             commands::datahub::open_data_folder,
@@ -271,6 +273,9 @@ pub fn run() {
             commands::wiki::wiki_lint_recompile,
             commands::wiki::get_page_sources,
             commands::wiki::get_content_wiki_pages,
+            commands::workspace::get_workspace_paths,
+            commands::workspace::initialize_workspace_root,
+            commands::workspace::open_workspace_root,
             update::check_for_update_manual,
             update::dismiss_update_version,
             update::set_update_check_enabled,
