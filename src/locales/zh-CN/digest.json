@@ -56,6 +56,13 @@
     "reanalyze": "重新分析",
     "updating": "正在更新分析...",
     "analyzing": "正在深度分析你的内容...",
+    "progress": {
+      "planning": "本次自动抽样 {{selected}} / {{total}} 条内容，预计分 {{batches}} 批分析",
+      "thinking": "正在准备本次分析（{{selected}} / {{total}} 条）",
+      "batching": "正在分析第 {{current}} / {{total}} 批（共 {{selected}} 条样本）",
+      "aggregating": "分批完成，正在汇总 {{total}} 批结果",
+      "generating": "正在生成最终报告"
+    },
     "emptyNeedApiKey": {
       "title": "需要配置 AI 服务",
       "desc": "洞察报告需要 AI 来分析你的内容"
@@ -69,7 +76,7 @@
       "desc": "没有特别集中的方向。继续保存，下次分析可能会有新发现。"
     },
     "stats": {
-      "savedItems": "保存条目",
+      "savedItems": "分析样本",
       "activeDays": "活跃天数",
       "annotated": "带备注",
       "annotationRate": "主动率",

@@ -269,12 +269,8 @@ pub fn build_prompt(
 // Prompt Builder (v3: Radar Report)
 // ====================================================================
 
-/// Build system prompt and user message for the v3 radar report.
-pub fn build_prompt_v2(
-    items: &[ContentForAnalysis],
-    stats: &serde_json::Value,
-) -> (String, String) {
-    let system_prompt = r#"你是 OpenWiki 洞察，专门分析用户信息收藏行为的 AI 分析师。
+fn radar_report_system_prompt() -> String {
+    r#"你是 OpenWiki 洞察，专门分析用户信息收藏行为的 AI 分析师。
 
 你会收到两部分数据：
 1. stats：用户这段时间的统计摘要（来源分布、时段分布、标注率等）
@@ -389,9 +385,14 @@ pub fn build_prompt_v2(
 ### actions
 - 每条必须绑定到具体的保存内容
 - 3条，不多不少"#
-        .to_string();
+        .to_string()
+}
 
-    let max_chars: usize = 3000;
+fn build_radar_user_message(
+    items: &[ContentForAnalysis],
+    stats: &serde_json::Value,
+    max_chars: usize,
+) -> String {
     let mut item_jsons = Vec::with_capacity(items.len());
     for item in items {
         let text = item.raw_text.as_deref().unwrap_or("");
@@ -429,7 +430,121 @@ pub fn build_prompt_v2(
         "items": item_jsons,
     });
 
-    let user_message = serde_json::to_string(&user_data).unwrap_or_default();
+    serde_json::to_string(&user_data).unwrap_or_default()
+}
+
+/// Build system prompt and user message for the v3 radar report.
+pub fn build_prompt_v2(
+    items: &[ContentForAnalysis],
+    stats: &serde_json::Value,
+) -> (String, String) {
+    (
+        radar_report_system_prompt(),
+        build_radar_user_message(items, stats, 3000),
+    )
+}
+
+pub fn build_batch_prompt(
+    items: &[ContentForAnalysis],
+    stats: &serde_json::Value,
+) -> (String, String) {
+    (
+        radar_report_system_prompt(),
+        build_radar_user_message(items, stats, 220),
+    )
+}
+
+pub fn compact_radar_report(report: &RadarReport) -> serde_json::Value {
+    serde_json::json!({
+        "meta": report.meta.clone(),
+        "at_a_glance": report.at_a_glance.iter().map(|item| item.text.clone()).collect::<Vec<_>>(),
+        "info_diet": {
+            "sources": report.info_diet.sources.iter().take(4).map(|source| {
+                serde_json::json!({
+                    "name": source.name.clone(),
+                    "count": source.count,
+                    "percent": source.percent,
+                })
+            }).collect::<Vec<_>>(),
+            "dominant_topic": report.info_diet.dominant_topic.clone(),
+            "alert": report.info_diet.alert.clone(),
+        },
+        "subconscious": report.subconscious.iter().map(|item| {
+            serde_json::json!({
+                "title": item.title.clone(),
+                "body": item.body.clone(),
+                "evidence_count": item.evidence_count,
+            })
+        }).collect::<Vec<_>>(),
+        "graveyard": {
+            "alert": report.graveyard.alert.clone(),
+            "top_picks": report.graveyard.top_picks.iter().take(3).map(|pick| {
+                serde_json::json!({
+                    "title": pick.title.clone(),
+                    "reason": pick.reason.clone(),
+                    "tags": pick.tags.clone(),
+                    "source": pick.source.clone(),
+                    "date": pick.date.clone(),
+                })
+            }).collect::<Vec<_>>(),
+        },
+        "blind_spots": report.blind_spots.iter().map(|item| item.title.clone()).collect::<Vec<_>>(),
+        "actions": report.actions.iter().map(|action| {
+            serde_json::json!({
+                "title": action.title.clone(),
+                "desc": action.desc.clone(),
+                "ref": action.action_ref.clone(),
+                "time": action.time.clone(),
+            })
+        }).collect::<Vec<_>>(),
+        "topic_cloud": report.topic_cloud.iter().take(8).map(|topic| {
+            serde_json::json!({
+                "name": topic.name.clone(),
+                "percent": topic.percent,
+            })
+        }).collect::<Vec<_>>(),
+        "verdict": report.verdict.clone(),
+    })
+}
+
+pub fn build_aggregate_prompt(
+    batch_summaries: &[serde_json::Value],
+    stats: &serde_json::Value,
+) -> (String, String) {
+    let system_prompt = format!(
+        "{}\n\n额外要求：\n- 你现在拿到的是多个“分批洞察摘要”，不是原始内容\n- 你要做的是跨批次去重、合并、重排优先级，生成一份最终总报告\n- 不要机械拼接分批结论，要输出一份统一口径、统一判断的最终版本\n- 如果不同批次里出现相同主题，要合并成一个更强的判断\n- meta、footer、heatmap 允许参考 stats 保持整体一致",
+        radar_report_system_prompt()
+    );
+    let user_message = serde_json::to_string(&serde_json::json!({
+        "stats": stats,
+        "batch_summaries": batch_summaries,
+    }))
+    .unwrap_or_default();
+    (system_prompt, user_message)
+}
+
+pub fn build_radar_repair_prompt(raw_json: &str) -> (String, String) {
+    let system_prompt = r#"你是一个严格的 JSON 修复器。
+
+你的任务不是重写内容，而是把一段“几乎正确但语法损坏的 RadarReport JSON”修复成合法 JSON。
+
+严格要求：
+- 只返回一个合法 JSON 对象
+- 不要输出 Markdown 代码块
+- 不要输出解释、前言、注释
+- 尽量保留原字段、原文案、原数字
+- 只修复语法错误、转义错误、缺失的逗号/括号/引号等
+- 顶层字段必须保持为：
+  meta, at_a_glance, info_diet, subconscious, graveyard, blind_spots, actions, heatmap, topic_cloud, verdict, footer
+- actions 里的 ref 字段不能为空
+"#
+    .to_string();
+
+    let user_message = serde_json::json!({
+        "task": "repair_radar_report_json",
+        "malformed_json": raw_json,
+    })
+    .to_string();
 
     (system_prompt, user_message)
 }
@@ -468,8 +583,8 @@ pub fn validate_analysis(json_str: &str, item_count: usize) -> Result<BriefingAn
 pub fn validate_radar_report(json_str: &str) -> Result<RadarReport, String> {
     let cleaned = extract_json(json_str);
 
-    let report: RadarReport =
-        serde_json::from_str(&cleaned).map_err(|e| format!("RadarReport JSON parse failed: {}", e))?;
+    let report: RadarReport = serde_json::from_str(&cleaned)
+        .map_err(|e| format!("RadarReport JSON parse failed: {}", e))?;
 
     let required_lists = [
         ("at_a_glance", report.at_a_glance.len()),
@@ -664,7 +779,10 @@ pub async fn call_analysis_api(
                 .map(|c| c.text.clone())
                 .unwrap_or_default())
         }
-        AnalysisProvider::OpenAi | AnalysisProvider::OpenRouter | AnalysisProvider::DashScope | AnalysisProvider::MiniMax => {
+        AnalysisProvider::OpenAi
+        | AnalysisProvider::OpenRouter
+        | AnalysisProvider::DashScope
+        | AnalysisProvider::MiniMax => {
             let url = match provider {
                 AnalysisProvider::OpenRouter => "https://openrouter.ai/api/v1/chat/completions",
                 AnalysisProvider::DashScope => {
@@ -735,8 +853,8 @@ pub async fn call_analysis_api(
                 return Err(format!("API error ({}): {}", status, text));
             }
 
-            let parsed: OpenAiResponse =
-                serde_json::from_str(&text).map_err(|e| format!("Failed to parse API response: {}", e))?;
+            let parsed: OpenAiResponse = serde_json::from_str(&text)
+                .map_err(|e| format!("Failed to parse API response: {}", e))?;
 
             Ok(parsed
                 .choices
@@ -880,21 +998,39 @@ pub async fn try_codex_call(
         .unwrap_or_else(|| "auto".to_string());
 
     let model = if saved_model == "auto" {
-        if is_deep { "gpt-5.4" } else { "gpt-5.4-mini" }
+        if is_deep {
+            "gpt-5.4"
+        } else {
+            "gpt-5.4-mini"
+        }
     } else {
         &saved_model
     };
 
     let result = crate::ai::codex_api::call_codex_api(
-        &access_token, &account_id, model, system_prompt, user_message, temperature,
-    ).await;
+        &access_token,
+        &account_id,
+        model,
+        system_prompt,
+        user_message,
+        temperature,
+    )
+    .await;
 
     // Auto fallback for deep tasks: gpt-5.4 → gpt-5.3-codex
     if saved_model == "auto" && is_deep && result.is_err() {
         log::warn!("Auto: {} failed, falling back to gpt-5.3-codex", model);
-        return Some(crate::ai::codex_api::call_codex_api(
-            &access_token, &account_id, "gpt-5.3-codex", system_prompt, user_message, temperature,
-        ).await);
+        return Some(
+            crate::ai::codex_api::call_codex_api(
+                &access_token,
+                &account_id,
+                "gpt-5.3-codex",
+                system_prompt,
+                user_message,
+                temperature,
+            )
+            .await,
+        );
     }
 
     Some(result)
@@ -911,25 +1047,49 @@ pub async fn try_gemini_call(
 ) -> Option<Result<String, String>> {
     let (access_token, project_id) = crate::ai::gemini_oauth::get_valid_token(db.clone()).await?;
     let repo = crate::storage::repository::Repository::new(db);
-    let saved_model = repo.get_setting("ai_model").ok().flatten()
+    let saved_model = repo
+        .get_setting("ai_model")
+        .ok()
+        .flatten()
         .unwrap_or_else(|| "auto".to_string());
 
     let model = if saved_model == "auto" {
-        if is_deep { "claude-opus-4-6-thinking" } else { "gemini-3-flash" }
+        if is_deep {
+            "claude-opus-4-6-thinking"
+        } else {
+            "gemini-3-flash"
+        }
     } else {
         &saved_model
     };
 
     let result = crate::ai::gemini_api::call_gemini_api(
-        &access_token, &project_id, model, system_prompt, user_message, temperature,
-    ).await;
+        &access_token,
+        &project_id,
+        model,
+        system_prompt,
+        user_message,
+        temperature,
+    )
+    .await;
 
     // Auto fallback for deep tasks: claude-opus-4-6-thinking → gemini-3.1-pro-high
     if saved_model == "auto" && is_deep && result.is_err() {
-        log::warn!("Auto: {} failed, falling back to gemini-3.1-pro-high", model);
-        return Some(crate::ai::gemini_api::call_gemini_api(
-            &access_token, &project_id, "gemini-3.1-pro-high", system_prompt, user_message, temperature,
-        ).await);
+        log::warn!(
+            "Auto: {} failed, falling back to gemini-3.1-pro-high",
+            model
+        );
+        return Some(
+            crate::ai::gemini_api::call_gemini_api(
+                &access_token,
+                &project_id,
+                "gemini-3.1-pro-high",
+                system_prompt,
+                user_message,
+                temperature,
+            )
+            .await,
+        );
     }
 
     Some(result)

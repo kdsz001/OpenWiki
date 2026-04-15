@@ -147,9 +147,7 @@ impl Database {
 
         // Migration 008: Add wiki tables
         let has_wiki_pages: bool = conn
-            .prepare(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'",
-            )?
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'")?
             .query_row([], |row| row.get::<_, i32>(0))
             .map(|count| count > 0)
             .unwrap_or(false);
@@ -256,7 +254,9 @@ impl Database {
                 )?;
             }
             let has_wiki: bool = conn
-                .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'")
+                .prepare(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages'",
+                )
                 .and_then(|mut s| s.query_row([], |row| row.get::<_, i32>(0)))
                 .map(|c| c > 0)
                 .unwrap_or(false);
@@ -266,6 +266,21 @@ impl Database {
                 )?;
             }
             log::info!("Migration 013 applied: added locale columns");
+        }
+
+        // Migration 014: Add attention batch cache table
+        let has_attention_batch_cache: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='attention_batch_cache'",
+            )?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|count| count > 0)
+            .unwrap_or(false);
+
+        if !has_attention_batch_cache {
+            let migration_014 = include_str!("migrations/014_add_attention_batch_cache.sql");
+            conn.execute_batch(migration_014)?;
+            log::info!("Migration 014 applied: added attention_batch_cache table");
         }
 
         log::info!("Database migrations completed successfully");

@@ -59,9 +59,9 @@ function RadarViewInner() {
     status,
     analysis,
     report,
-    hasNewContent,
     errorMessage,
     isLoading,
+    progress,
     loadRadar,
     triggerAnalysis,
     setupEventListener,
@@ -99,7 +99,7 @@ function RadarViewInner() {
           <div className="flex items-center gap-1">
             <button
               onClick={() => triggerAnalysis()}
-              disabled={isAnalyzing || !hasNewContent}
+              disabled={isAnalyzing}
               className="p-2 rounded-lg text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300
                          hover:bg-stone-100 dark:hover:bg-white/[0.08]
                          disabled:opacity-40 disabled:cursor-not-allowed transition-all"
@@ -152,6 +152,17 @@ function RadarViewInner() {
             <button onClick={() => triggerAnalysis()} className="font-medium hover:underline" style={{ fontSize: 13, color: ACCENT }}>
               {t("radar.reanalyze")}
             </button>
+          </div>
+        )}
+
+        {!isLoading && isAnalyzing && (
+          <div
+            className="rounded-xl px-4 py-3 mb-4"
+            style={{ backgroundColor: "var(--color-surface)", border: "1px solid var(--color-border)" }}
+          >
+            <p style={{ fontSize: 13, color: "var(--color-text-secondary)" }}>
+              {formatRadarProgress(t, progress)}
+            </p>
           </div>
         )}
 
@@ -219,6 +230,39 @@ function RadarViewInner() {
       </div>
     </div>
   );
+}
+
+function formatRadarProgress(
+  t: (key: string, options?: Record<string, unknown>) => string,
+  progress: {
+    stage: string;
+    current: number;
+    total: number;
+    selected_items?: number;
+    total_items?: number;
+  } | null,
+) {
+  if (!progress) {
+    return t("radar.analyzing");
+  }
+
+  const selected = progress.selected_items ?? 0;
+  const totalItems = progress.total_items ?? selected;
+
+  switch (progress.stage) {
+    case "planning":
+      return t("radar.progress.planning", { selected, total: totalItems, batches: progress.total });
+    case "thinking":
+      return t("radar.progress.thinking", { selected, total: totalItems });
+    case "batching":
+      return t("radar.progress.batching", { current: progress.current, total: progress.total, selected });
+    case "aggregating":
+      return t("radar.progress.aggregating", { total: progress.total });
+    case "generating":
+      return t("radar.progress.generating");
+    default:
+      return t("radar.analyzing");
+  }
 }
 
 function WikiLintSectionLazy() {
