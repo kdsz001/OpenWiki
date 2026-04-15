@@ -53,7 +53,10 @@
       "concept": "Concept",
       "entity": "Entity",
       "source": "Source",
+      "case": "Case",
+      "theme": "Theme",
       "comparison": "Comparison",
+      "dashboard": "Dashboard",
       "overview": "Overview"
     }
   },
@@ -75,7 +78,10 @@
     "unknownApp": "Unknown",
     "compiledAt": "Compiled on {{date}}",
     "notCompiled": "Not compiled",
-    "sourceCount": "{{count}} sources"
+    "sourceCount": "{{count}} sources",
+    "themes": "Themes",
+    "readOnly": "Read-only local sync",
+    "readOnlyDesc": "This page comes from your local knowledge base. OpenWiki currently displays and links it, but does not write changes back to the source Markdown."
   },
   "graph": {
     "title": "Knowledge Graph",

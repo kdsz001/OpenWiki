@@ -1,18 +1,21 @@
-import { useState, useEffect } from "react";
-import { X, BookOpen, User, FileText, GitCompare, Layers, Trash2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { X, BookOpen, User, FileText, GitCompare, Layers, Trash2, Briefcase, Network, LayoutDashboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { WikiPage, WikiPageSource } from "../../types/wiki";
 import type { CapturedContent } from "../../types/content";
-import { getPageSources } from "../../services/wikiService";
+import { getPageSources, getPageThemes, resolveWikiLink } from "../../services/wikiService";
 import { invoke } from "@tauri-apps/api/core";
 
 const TYPE_ICONS: Record<string, React.ComponentType<{ className?: string; size?: number; style?: React.CSSProperties }>> = {
   concept: BookOpen,
   entity: User,
   source: FileText,
+  case: Briefcase,
+  theme: Network,
   comparison: GitCompare,
+  dashboard: LayoutDashboard,
   overview: Layers,
 };
 
@@ -20,7 +23,10 @@ const TYPE_LABEL_KEYS: Record<string, string> = {
   concept: "browse.pageType.concept",
   entity: "browse.pageType.entity",
   source: "browse.pageType.source",
+  case: "browse.pageType.case",
+  theme: "browse.pageType.theme",
   comparison: "browse.pageType.comparison",
+  dashboard: "browse.pageType.dashboard",
   overview: "browse.pageType.overview",
 };
 
@@ -41,17 +47,38 @@ interface WikiPageDetailProps {
   onClose: () => void;
   onDelete: (id: string) => void;
   onNavigateToContent?: (contentId: string) => void;
+  onNavigateToPage?: (pageId: string) => void;
 }
 
-export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }: WikiPageDetailProps) {
+function decodeOpenWikiTarget(href: string): string | null {
+  const prefix = "openwiki://page/";
+  if (!href.startsWith(prefix)) return null;
+  const encoded = href.slice(prefix.length);
+  if (!encoded) return null;
+  try {
+    const normalized = encoded.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized + "=".repeat((4 - (normalized.length % 4 || 4)) % 4);
+    const binary = window.atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (error) {
+    console.error("Failed to decode OpenWiki target:", error);
+    return null;
+  }
+}
+
+export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent, onNavigateToPage }: WikiPageDetailProps) {
   const { t } = useTranslation("wiki");
   const [sources, setSources] = useState<(WikiPageSource & { content?: CapturedContent })[]>([]);
   const [loadingSources, setLoadingSources] = useState(true);
+  const [themes, setThemes] = useState<WikiPage[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const IconComponent = TYPE_ICONS[page.page_type] || BookOpen;
+  const isReadOnlyLocalPage = page.source_message_id?.startsWith("local-wiki:") ?? false;
 
   useEffect(() => {
     loadSources();
+    loadThemes();
   }, [page.id]);
 
   async function loadSources() {
@@ -77,6 +104,28 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
     }
     setLoadingSources(false);
   }
+
+  async function loadThemes() {
+    try {
+      setThemes(await getPageThemes(page.id));
+    } catch (e) {
+      console.error("Failed to load page themes:", e);
+      setThemes([]);
+    }
+  }
+
+  const handleWikiLinkClick = useCallback(async (href: string) => {
+    const target = decodeOpenWikiTarget(href);
+    if (!target) return;
+    try {
+      const resolvedPage = await resolveWikiLink(target);
+      if (resolvedPage) {
+        onNavigateToPage?.(resolvedPage.id);
+      }
+    } catch (error) {
+      console.error("Failed to resolve wiki link:", error);
+    }
+  }, [onNavigateToPage]);
 
   const isStale = page.status === "needs_recompile";
 
@@ -109,9 +158,14 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
                 {t("detail.staleWarning")}
               </span>
             )}
+            {isReadOnlyLocalPage && (
+              <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-sky-50 dark:bg-sky-500/10 text-sky-600 dark:text-sky-400">
+                {t("detail.readOnly")}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
-            {deleteConfirm ? (
+            {!isReadOnlyLocalPage && deleteConfirm ? (
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => { onDelete(page.id); setDeleteConfirm(false); }}
@@ -126,7 +180,7 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
                   {t("detail.cancel")}
                 </button>
               </div>
-            ) : (
+            ) : !isReadOnlyLocalPage ? (
               <button
                 onClick={() => setDeleteConfirm(true)}
                 className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 text-stone-400 hover:text-red-500 transition-colors"
@@ -134,7 +188,7 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
               >
                 <Trash2 size={16} />
               </button>
-            )}
+            ) : null}
             <button
               onClick={onClose}
               className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-white/[0.08] text-stone-400 transition-colors"
@@ -161,6 +215,37 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
             </p>
           )}
 
+          {isReadOnlyLocalPage && (
+            <p className="mb-4 text-xs" style={{ color: "var(--color-text-muted, #78716C)" }}>
+              {t("detail.readOnlyDesc")}
+            </p>
+          )}
+
+          {themes.length > 0 && (
+            <div className="mb-5">
+              <h3 className="flex items-center gap-1.5 mb-2" style={{ fontSize: 13, fontWeight: 600, color: "var(--color-text-primary)" }}>
+                <Network size={14} style={{ color: "#0F766E" }} />
+                {t("detail.themes")}
+              </h3>
+              <div className="flex flex-wrap gap-2">
+                {themes.map((theme) => (
+                  <button
+                    key={theme.id}
+                    onClick={() => onNavigateToPage?.(theme.id)}
+                    className="rounded-full px-3 py-1 text-xs font-medium transition-colors"
+                    style={{
+                      color: "#0F766E",
+                      backgroundColor: "#0F766E12",
+                      border: "1px solid #0F766E30",
+                    }}
+                  >
+                    {theme.title}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Markdown content */}
           <article
             className="prose prose-sm prose-stone dark:prose-invert max-w-none mb-6
@@ -174,7 +259,38 @@ export function WikiPageDetail({ page, onClose, onDelete, onNavigateToContent }:
                        prose-code:before:content-none prose-code:after:content-none"
             style={{ fontSize: 14, lineHeight: 1.8 }}
           >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              urlTransform={(url) => {
+                if (url.startsWith("openwiki://page/")) return url;
+                return defaultUrlTransform(url);
+              }}
+              components={{
+                a: ({ href, children, ...props }) => {
+                  if (href?.startsWith("openwiki://page/")) {
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => handleWikiLinkClick(href)}
+                        className="inline p-0 m-0 border-0 bg-transparent text-orange-500 hover:underline cursor-pointer"
+                      >
+                        {children}
+                      </button>
+                    );
+                  }
+                  return (
+                    <a
+                      {...props}
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {children}
+                    </a>
+                  );
+                },
+              }}
+            >
               {page.body_markdown}
             </ReactMarkdown>
           </article>

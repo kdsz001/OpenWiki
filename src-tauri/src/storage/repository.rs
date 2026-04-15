@@ -1829,6 +1829,45 @@ impl Repository {
         Ok(results)
     }
 
+    pub fn get_target_pages_by_relation(
+        &self,
+        page_id: &str,
+        relation: &str,
+    ) -> Result<Vec<super::models::WikiPage>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT p.id, p.title, p.slug, p.page_type, p.body_markdown, p.summary, p.tags, p.status, p.confidence, p.created_at, p.updated_at, p.last_compiled_at, p.source_message_id
+             FROM wiki_edges e
+             JOIN wiki_pages p ON p.id = e.target_page_id
+             WHERE e.source_page_id = ?1
+               AND e.relation = ?2
+               AND p.status IN ('active', 'needs_recompile')
+             ORDER BY p.updated_at DESC"
+        )?;
+        let rows = stmt.query_map(params![page_id, relation], |row| {
+            Ok(super::models::WikiPage {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                slug: row.get(2)?,
+                page_type: row.get(3)?,
+                body_markdown: row.get(4)?,
+                summary: row.get(5)?,
+                tags: row.get(6)?,
+                status: row.get(7)?,
+                confidence: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                last_compiled_at: row.get(11)?,
+                source_message_id: row.get(12).unwrap_or(None),
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
     pub fn delete_edges_for_page(&self, page_id: &str) -> Result<(), Box<dyn std::error::Error>> {
         let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
         conn.execute(
