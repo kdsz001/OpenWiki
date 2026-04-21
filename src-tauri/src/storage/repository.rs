@@ -996,14 +996,36 @@ impl Repository {
             .lock()
             .map_err(|e| format!("Lock error: {}", e))?;
         let cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(days)).to_rfc3339();
-        let mut stmt = conn.prepare(
-            "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
-             FROM captured_content
-             WHERE is_deleted = 0 AND captured_at >= ?1
-             ORDER BY captured_at DESC
-             LIMIT ?2",
-        )?;
-        let rows = stmt.query_map(params![cutoff, limit as i64], |row| {
+        let sql = match (days <= 0, limit == 0) {
+            (true, true) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC"
+            }
+            (true, false) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC
+                 LIMIT ?1"
+            }
+            (false, true) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0 AND (captured_at >= ?1 OR updated_at >= ?1)
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC"
+            }
+            (false, false) => {
+                "SELECT id, raw_text, source_url, captured_at, summary, tags, user_note, source_app, content_type
+                 FROM captured_content
+                 WHERE is_deleted = 0 AND (captured_at >= ?1 OR updated_at >= ?1)
+                 ORDER BY CASE WHEN updated_at > captured_at THEN updated_at ELSE captured_at END DESC
+                 LIMIT ?2"
+            }
+        };
+        let mut stmt = conn.prepare(sql)?;
+        fn map_content_for_analysis(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContentForAnalysis> {
             Ok(ContentForAnalysis {
                 id: row.get(0)?,
                 raw_text: row.get(1)?,
@@ -1015,12 +1037,31 @@ impl Repository {
                 source_app: row.get(7)?,
                 content_type: row.get(8)?,
             })
-        })?;
-        let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
         }
-        Ok(results)
+
+        fn collect_rows<F>(
+            rows: rusqlite::MappedRows<'_, F>,
+        ) -> Result<Vec<ContentForAnalysis>, Box<dyn std::error::Error>>
+        where
+            F: FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<ContentForAnalysis>,
+        {
+            let mut results = Vec::new();
+            for row in rows {
+                results.push(row?);
+            }
+            Ok(results)
+        }
+
+        match (days <= 0, limit == 0) {
+            (true, true) => collect_rows(stmt.query_map([], map_content_for_analysis)?),
+            (true, false) => {
+                collect_rows(stmt.query_map(params![limit as i64], map_content_for_analysis)?)
+            }
+            (false, true) => collect_rows(stmt.query_map(params![cutoff], map_content_for_analysis)?),
+            (false, false) => collect_rows(
+                stmt.query_map(params![cutoff, limit as i64], map_content_for_analysis)?,
+            ),
+        }
     }
 
     /// Compute stats for radar v2 prompt from content items.
@@ -1187,6 +1228,57 @@ impl Repository {
         conn.execute(
             "UPDATE attention_insights SET status = ?1, analysis_json = ?2, error_message = ?3 WHERE id = ?4",
             params![status, analysis_json, error_message, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_attention_batch_report(
+        &self,
+        batch_key: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT report_json FROM attention_batch_cache WHERE batch_key = ?1 LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![batch_key], |row| row.get::<_, String>(0))?;
+        match rows.next() {
+            Some(Ok(report_json)) => Ok(Some(report_json)),
+            Some(Err(e)) => Err(Box::new(e)),
+            None => Ok(None),
+        }
+    }
+
+    pub fn save_attention_batch_report(
+        &self,
+        batch_key: &str,
+        content_ids_json: &str,
+        report_json: &str,
+        item_count: usize,
+        model_used: &str,
+        locale: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO attention_batch_cache
+             (batch_key, content_ids_json, report_json, item_count, model_used, locale, generated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                batch_key,
+                content_ids_json,
+                report_json,
+                item_count as i64,
+                model_used,
+                locale,
+                chrono::Utc::now().to_rfc3339()
+            ],
         )?;
         Ok(())
     }

@@ -8,6 +8,14 @@ import {
   type RadarReport,
 } from "../services/radarService";
 
+interface RadarProgress {
+  stage: string;
+  current: number;
+  total: number;
+  selected_items?: number;
+  total_items?: number;
+}
+
 interface RadarState {
   status: RadarStatus["status"];
   analysis: BriefingAnalysis | null;
@@ -16,6 +24,7 @@ interface RadarState {
   hasNewContent: boolean;
   errorMessage: string | null;
   isLoading: boolean;
+  progress: RadarProgress | null;
 
   loadRadar: () => Promise<void>;
   triggerAnalysis: () => Promise<void>;
@@ -30,6 +39,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
   hasNewContent: false,
   errorMessage: null,
   isLoading: true,
+  progress: null,
 
   loadRadar: async () => {
     set({ isLoading: true });
@@ -66,6 +76,7 @@ export const useRadarStore = create<RadarState>((set, get) => ({
         hasNewContent: result.has_new_content,
         errorMessage,
         isLoading: false,
+        progress: status === "analyzing" ? get().progress : null,
       });
 
       // Auto-trigger analysis if stale or empty
@@ -77,28 +88,45 @@ export const useRadarStore = create<RadarState>((set, get) => ({
         isLoading: false,
         status: "error",
         errorMessage: e instanceof Error ? e.message : String(e),
+        progress: null,
       });
     }
   },
 
   triggerAnalysis: async () => {
-    set({ status: "analyzing" });
+    set({ status: "analyzing", progress: null });
     try {
       await triggerAttentionAnalysis();
     } catch (e) {
       set({
         status: "error",
         errorMessage: e instanceof Error ? e.message : String(e),
+        progress: null,
       });
     }
   },
 
   setupEventListener: async () => {
     try {
+      const unlistenProgress = await listen<RadarProgress | string>("attention-analysis-progress", (event) => {
+        const payload = event.payload;
+        if (typeof payload === "string") {
+          set({
+            status: "analyzing",
+            progress: { stage: payload, current: 0, total: 0 },
+          });
+          return;
+        }
+        set({ status: "analyzing", progress: payload });
+      });
       const unlisten = await listen<string>("attention-analysis-complete", () => {
+        set({ progress: null });
         get().loadRadar();
       });
-      return unlisten;
+      return () => {
+        unlistenProgress();
+        unlisten();
+      };
     } catch (e) {
       console.error("Failed to setup radar event listener:", e);
       return () => {};
