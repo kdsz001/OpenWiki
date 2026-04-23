@@ -82,6 +82,9 @@ export function SettingsView() {
     screenshotDir,
     totalItems,
     diskUsageMB,
+    storageMode,
+    workspaceRoot,
+    reopenWorkspaceSetup,
     setApiKey,
     setProvider,
     setModel,
@@ -848,13 +851,46 @@ export function SettingsView() {
             <SettingRow label={t("storage.screenshotDir")}>
               <span className="text-xs font-mono text-gray-500 dark:text-slate-400 break-all">{screenshotDir}</span>
             </SettingRow>
+            <SettingRow label={t("workspaceSetup.modeTitle")}>
+              <span className="text-sm text-gray-700 dark:text-gray-300">
+                {storageMode === "connected"
+                  ? t("workspaceSetup.modeConnectedTitle")
+                  : storageMode === "hybrid"
+                    ? t("workspaceSetup.modeHybridTitle")
+                    : t("workspaceSetup.modeManagedTitle")}
+              </span>
+            </SettingRow>
+            <SettingRow
+              label={t("workspaceSetup.workspaceRootTitle")}
+              desc={t("workspaceSetup.workspaceRootDesc")}
+            >
+              <span className="text-xs font-mono text-gray-500 dark:text-slate-400 break-all">
+                {workspaceRoot || "—"}
+              </span>
+            </SettingRow>
             <div className="p-4">
-              <button
-                onClick={() => invoke("open_data_folder").catch((e) => console.error("open_data_folder failed:", e))}
-                className="w-full py-2 text-sm font-medium rounded-lg border text-gray-600 dark:text-gray-300 border-gray-200/50 dark:border-white/[0.08] bg-white/40 dark:bg-white/[0.04] hover:bg-white/70 dark:hover:bg-white/[0.08] transition-colors"
-              >
-                {t("storage.openDataFolder")}
-              </button>
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => invoke("open_data_folder").catch((e) => console.error("open_data_folder failed:", e))}
+                  className="w-full py-2 text-sm font-medium rounded-lg border text-gray-600 dark:text-gray-300 border-gray-200/50 dark:border-white/[0.08] bg-white/40 dark:bg-white/[0.04] hover:bg-white/70 dark:hover:bg-white/[0.08] transition-colors"
+                >
+                  {t("storage.openDataFolder")}
+                </button>
+                <button
+                  onClick={() => import("../../services/workspaceService")
+                    .then((ws) => ws.openWorkspaceRoot())
+                    .catch((e) => console.error("open_workspace_root failed:", e))}
+                  className="w-full py-2 text-sm font-medium rounded-lg border text-gray-600 dark:text-gray-300 border-gray-200/50 dark:border-white/[0.08] bg-white/40 dark:bg-white/[0.04] hover:bg-white/70 dark:hover:bg-white/[0.08] transition-colors"
+                >
+                  {t("workspaceSetup.openWorkspace")}
+                </button>
+                <button
+                  onClick={() => reopenWorkspaceSetup().catch((e) => console.error("reopenWorkspaceSetup failed:", e))}
+                  className="w-full py-2 text-sm font-medium rounded-lg bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                >
+                  {t("workspaceSetup.reopenSetup")}
+                </button>
+              </div>
             </div>
           </div>
 

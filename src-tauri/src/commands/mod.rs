@@ -9,3 +9,4 @@ pub mod preferences;
 pub mod report;
 pub mod storage;
 pub mod wiki;
+pub mod workspace;
