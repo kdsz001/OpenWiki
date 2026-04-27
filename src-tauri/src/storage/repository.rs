@@ -2022,6 +2022,242 @@ impl Repository {
         for row in rows { results.push(row?); }
         Ok(results)
     }
+
+    /// Whether the FTS5 virtual table exists. False means migration 014
+    /// failed to apply (older sqlite without FTS5) — callers should fall
+    /// back to the full-index APIs above.
+    pub fn fts_available(&self) -> bool {
+        let conn = match self.db.conn.lock() {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        conn.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wiki_pages_fts'")
+            .and_then(|mut s| s.query_row([], |row| row.get::<_, i32>(0)))
+            .is_ok()
+    }
+
+    /// Build an FTS5 MATCH expression from a free-form user query.
+    ///
+    /// Two transforms applied:
+    ///
+    /// 1. **CJK segmentation** — same `cjk_segment()` used at index time
+    ///    (registered as `cjk_seg()` SQL function and applied by triggers).
+    ///    This guarantees query tokens line up with index tokens. Without
+    ///    it, querying "设计" would never match "整理设计风格" because
+    ///    unicode61 indexes the latter as one big token.
+    ///
+    /// 2. **Syntax sanitization** — FTS5 reserves a handful of chars
+    ///    (`" * : ^ ( ) - +`) that would either be parsed specially or
+    ///    raise a syntax error. We strip them.
+    ///
+    /// Then split on whitespace, quote each token (which becomes an
+    /// adjacent-token phrase match for CJK after segmentation), and OR
+    /// them together for broad recall — Q&A wants high recall, the AI
+    /// does the precision step downstream.
+    fn build_fts_match(query: &str) -> String {
+        // 1. Strip FTS5 syntax chars first so they don't survive into the
+        //    phrase quoting step.
+        let cleaned: String = query
+            .chars()
+            .map(|c| match c {
+                '"' | '\'' | '*' | ':' | '^' | '(' | ')' | '-' | '+' => ' ',
+                _ => c,
+            })
+            .collect();
+        // 2. Split on the user's original whitespace into words. Each
+        //    word becomes a quoted phrase in the OR'd MATCH expression.
+        //    For CJK words, cjk_segment turns each character into its
+        //    own token, and the quoted phrase becomes an adjacency
+        //    match (e.g. "设" followed immediately by "计").
+        let phrases: Vec<String> = cleaned
+            .split_whitespace()
+            .filter(|w| !w.is_empty())
+            .map(|w| format!("\"{}\"", super::database::cjk_segment(w)))
+            .collect();
+        phrases.join(" OR ")
+    }
+
+    /// Extract the best clickable link from a wiki page body. Pages
+    /// frequently include a "## 项目地址" or "## Links" section with
+    /// the actual project URL — that's far more useful to surface than
+    /// the source_url (which is often the user's tweet/article they
+    /// happened to copy from).
+    ///
+    /// Priority:
+    ///   1. First github.com / gitlab.com / bitbucket.org link
+    ///   2. First non-social-media http(s) link
+    ///   3. None (caller falls back to source_url)
+    fn extract_project_url_from_body(body: &str) -> Option<String> {
+        use std::sync::OnceLock;
+        static RE: OnceLock<regex::Regex> = OnceLock::new();
+        let re = RE.get_or_init(|| {
+            // URL stops at whitespace, Markdown bracket close, or CJK punctuation.
+            // Inside [...], `)` `]` `>` don't need escaping.
+            regex::Regex::new(r"https?://[^\s)\]>，。、；：！？]+").expect("regex compiles")
+        });
+
+        let trim_trailing = |s: &str| -> String {
+            s.trim_end_matches(|c: char| {
+                matches!(
+                    c,
+                    '.' | ',' | ';' | ':' | '?' | '!' |
+                    '。' | '，' | '、' | '；' | '：' | '！' | '？'
+                )
+            })
+            .to_string()
+        };
+
+        let is_repo = |u: &str| {
+            u.contains("github.com")
+                || u.contains("gitlab.com")
+                || u.contains("bitbucket.org")
+                || u.contains("huggingface.co")
+        };
+        let is_social = |u: &str| {
+            u.contains("twitter.com")
+                || u.contains("x.com/")
+                || u.contains("weibo.com")
+                || u.contains("mp.weixin.qq.com")
+                || u.contains("xiaohongshu.com")
+                || u.contains("douyin.com")
+                || u.contains("youtube.com/watch")
+                || u.contains("bilibili.com")
+        };
+
+        let mut fallback: Option<String> = None;
+        for m in re.find_iter(body) {
+            let url = trim_trailing(m.as_str());
+            if is_repo(&url) {
+                return Some(url);
+            }
+            if fallback.is_none() && !is_social(&url) {
+                fallback = Some(url);
+            }
+        }
+        fallback
+    }
+
+    /// Returns (id, title, summary, created_at, best_url) candidates
+    /// for AI prompts, pre-filtered in SQL.
+    ///
+    /// `best_url` priority:
+    ///   1. GitHub / GitLab / HuggingFace project link extracted from body_markdown
+    ///   2. Any non-social-media http link in body_markdown
+    ///   3. source_url (the page the user originally captured from)
+    ///   4. None
+    ///
+    /// Why: when a user asks "what was that design skill", they want to
+    /// click through to the actual project (a GitHub repo) — not back to
+    /// the tweet they happened to save it from.
+    ///
+    /// - `fts_query`: optional free-form text. None = no FTS filter.
+    /// - `date_start`/`date_end`: optional ISO-8601 timestamps. Filters
+    ///   `created_at` lexically (works because we store ISO-8601 UTC).
+    /// - `exclude_qa`: true for Q&A retrieval (Q&A pages would create a
+    ///   feedback loop), false for compile (compile may merge into Q&A
+    ///   pages legitimately).
+    /// - `limit`: max candidates to return. Recommend 50–100 for AI prompts.
+    ///
+    /// Falls back to a non-FTS query when FTS is unavailable or when
+    /// `fts_query` produces no usable tokens.
+    pub fn get_wiki_page_candidates(
+        &self,
+        fts_query: Option<&str>,
+        date_start: Option<&str>,
+        date_end: Option<&str>,
+        exclude_qa: bool,
+        limit: i64,
+    ) -> Result<Vec<(String, String, String, String, Option<String>)>, Box<dyn std::error::Error>> {
+        let conn = self.db.conn.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+        let match_expr: Option<String> = fts_query
+            .map(Self::build_fts_match)
+            .filter(|s| !s.is_empty());
+
+        let fts_table_exists = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='wiki_pages_fts'")
+            .and_then(|mut s| s.query_row([], |row| row.get::<_, i32>(0)))
+            .is_ok();
+        let use_fts = match_expr.is_some() && fts_table_exists;
+
+        // We pull the source URL via a correlated subquery — picks one
+        // active source per page (most recently contributed). NULL when
+        // a page has no active source (rare but possible for pages built
+        // entirely from chat answers).
+        let url_subq = "(SELECT cc.source_url FROM wiki_page_sources wps \
+            JOIN captured_content cc ON cc.id = wps.content_id \
+            WHERE wps.page_id = wp.id AND wps.source_status = 'active' \
+            AND cc.source_url IS NOT NULL AND cc.source_url != '' \
+            ORDER BY wps.contributed_at DESC LIMIT 1)";
+
+        let mut sql = String::new();
+        let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+
+        // We also fetch the first ~3000 chars of body_markdown so we can
+        // mine a project link from it in Rust. Project links typically
+        // sit in a "## 项目地址" section near the top.
+        if use_fts {
+            sql.push_str(&format!(
+                "SELECT wp.id, wp.title, COALESCE(wp.summary, substr(wp.body_markdown, 1, 100)), wp.created_at, {}, substr(wp.body_markdown, 1, 3000) \
+                 FROM wiki_pages_fts fts \
+                 JOIN wiki_pages wp ON wp.id = fts.page_id \
+                 WHERE wiki_pages_fts MATCH ? AND wp.status = 'active'",
+                url_subq
+            ));
+            params.push(Box::new(match_expr.clone().unwrap()));
+        } else {
+            sql.push_str(&format!(
+                "SELECT wp.id, wp.title, COALESCE(wp.summary, substr(wp.body_markdown, 1, 100)), wp.created_at, {}, substr(wp.body_markdown, 1, 3000) \
+                 FROM wiki_pages wp \
+                 WHERE wp.status = 'active'",
+                url_subq
+            ));
+        }
+
+        if exclude_qa {
+            sql.push_str(" AND wp.page_type != 'qa'");
+        }
+        if let Some(s) = date_start {
+            sql.push_str(" AND wp.created_at >= ?");
+            params.push(Box::new(s.to_string()));
+        }
+        if let Some(e) = date_end {
+            sql.push_str(" AND wp.created_at <= ?");
+            params.push(Box::new(e.to_string()));
+        }
+
+        if use_fts {
+            sql.push_str(" ORDER BY rank");
+        } else if date_start.is_some() || date_end.is_some() {
+            sql.push_str(" ORDER BY wp.created_at DESC");
+        } else {
+            sql.push_str(" ORDER BY wp.title");
+        }
+        sql.push_str(" LIMIT ?");
+        params.push(Box::new(limit));
+
+        let mut stmt = conn.prepare(&sql)?;
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(param_refs.as_slice(), |row| {
+            // Tuple shape returned to caller stays at 5 elements; the
+            // body excerpt is consumed here to compute best_url and not
+            // forwarded.
+            let id: String = row.get(0)?;
+            let title: String = row.get(1)?;
+            let summary: String = row.get(2)?;
+            let created_at: String = row.get(3)?;
+            let source_url: Option<String> = row.get(4)?;
+            let body_excerpt: String = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let best_url = Self::extract_project_url_from_body(&body_excerpt).or(source_url);
+            Ok((id, title, summary, created_at, best_url))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
 }
 
 #[cfg(test)]
@@ -2233,5 +2469,251 @@ mod tests {
         repo.update_digest_action("item_2", "keep").unwrap();
 
         assert_eq!(repo.count_undigested().unwrap(), 3);
+    }
+
+    // ========== FTS / candidate retrieval ==========
+
+    fn make_wiki_page(id: &str, title: &str, summary: &str, body: &str, created_at: &str, page_type: &str) -> super::super::models::WikiPage {
+        super::super::models::WikiPage {
+            id: id.to_string(),
+            title: title.to_string(),
+            slug: format!("slug-{}", id),
+            page_type: page_type.to_string(),
+            body_markdown: body.to_string(),
+            summary: Some(summary.to_string()),
+            tags: None,
+            status: "active".to_string(),
+            confidence: 1.0,
+            created_at: created_at.to_string(),
+            updated_at: created_at.to_string(),
+            last_compiled_at: None,
+            source_message_id: None,
+        }
+    }
+
+    #[test]
+    fn fts_table_is_available_after_migration() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        assert!(repo.fts_available(), "FTS table should exist after migrations");
+    }
+
+    #[test]
+    fn fts_indexes_inserted_pages_via_trigger() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "p1", "RAG technology", "Retrieval-augmented generation overview",
+            "RAG combines retrieval with LLMs.", "2026-04-26T10:00:00Z", "concept",
+        )).unwrap();
+
+        let candidates = repo
+            .get_wiki_page_candidates(Some("RAG"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].0, "p1");
+    }
+
+    #[test]
+    fn fts_delete_trigger_removes_from_index() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "p1", "DeepSeek model", "DeepSeek V4 release notes",
+            "DeepSeek is...", "2026-04-26T10:00:00Z", "concept",
+        )).unwrap();
+        repo.delete_wiki_page("p1").unwrap();
+
+        let candidates = repo
+            .get_wiki_page_candidates(Some("DeepSeek"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(candidates.len(), 0);
+    }
+
+    #[test]
+    fn date_range_filter_narrows_results() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "old", "Old page", "old", "old body", "2026-01-01T10:00:00Z", "concept",
+        )).unwrap();
+        repo.save_wiki_page(&make_wiki_page(
+            "new", "New page", "new", "new body", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+
+        let recent = repo
+            .get_wiki_page_candidates(None, Some("2026-04-01T00:00:00Z"), None, true, 10)
+            .unwrap();
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].0, "new");
+    }
+
+    #[test]
+    fn excludes_qa_pages_when_requested() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "concept-1", "Buffett", "Investment philosophy",
+            "Value investing.", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+        repo.save_wiki_page(&make_wiki_page(
+            "qa-1", "Buffett FAQ", "Past Q&A about Buffett",
+            "What did Buffett say...", "2026-04-25T10:00:00Z", "qa",
+        )).unwrap();
+
+        let qa_excluded = repo
+            .get_wiki_page_candidates(Some("Buffett"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(qa_excluded.len(), 1);
+        assert_eq!(qa_excluded[0].0, "concept-1");
+
+        let qa_included = repo
+            .get_wiki_page_candidates(Some("Buffett"), None, None, false, 10)
+            .unwrap();
+        assert_eq!(qa_included.len(), 2);
+    }
+
+    #[test]
+    fn empty_fts_query_falls_back_to_no_filter() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "p1", "Anything", "any", "body", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+
+        // Query with only FTS-syntax chars resolves to empty match expr
+        // → falls back to non-FTS query, returns the page
+        let r = repo
+            .get_wiki_page_candidates(Some("*-+:"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn fts_query_sanitizes_special_chars() {
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "p1", "Hello world", "summary", "body", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+
+        // Quotes and other FTS5 syntax chars should not crash — they
+        // get stripped before the MATCH expression is built.
+        let r = repo
+            .get_wiki_page_candidates(Some("\"hello\" -world :extra"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(r.len(), 1);
+    }
+
+    #[test]
+    fn fts_finds_cjk_substring_in_continuous_chinese() {
+        // The bug this guards against: unicode61 indexed continuous CJK
+        // sequences as a single token, so "整理设计风格" was one token
+        // and a search for "设计" missed it. Migration 015 + cjk_seg()
+        // forces character-level tokenization.
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "design-md",
+            "awesome-design-md",
+            "整理设计风格并支持开源共建",
+            "项目整理各大网站的设计风格用于喂给 AI",
+            "2026-04-25T10:00:00Z",
+            "source",
+        )).unwrap();
+
+        // Query "设计" must hit the page even though "设计" is buried
+        // in the middle of a continuous Chinese string.
+        let r = repo
+            .get_wiki_page_candidates(Some("设计"), None, None, true, 10)
+            .unwrap();
+        assert_eq!(r.len(), 1, "expected to find page with 设计 in summary");
+        assert_eq!(r[0].0, "design-md");
+    }
+
+    #[test]
+    fn fts_mixed_cjk_and_english_query() {
+        // Real-world Q&A query shape: extracted keywords mix Chinese
+        // topic words with English technical terms.
+        let db = test_db();
+        let repo = Repository::new(db);
+        repo.save_wiki_page(&make_wiki_page(
+            "p1", "awesome-design-md",
+            "整理设计风格并支持开源共建", "body", "2026-04-25T10:00:00Z", "source",
+        )).unwrap();
+        repo.save_wiki_page(&make_wiki_page(
+            "p2", "NanoBanana-PPT-Skills",
+            "AI 生成 PPT 的 Skill", "body", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+        repo.save_wiki_page(&make_wiki_page(
+            "p3", "无关页面",
+            "完全不相关", "body", "2026-04-25T10:00:00Z", "concept",
+        )).unwrap();
+
+        // Query "设计 skill" → should pull p1 (matches 设计) AND p2
+        // (matches skill) but not p3.
+        let r = repo
+            .get_wiki_page_candidates(Some("设计 skill"), None, None, true, 10)
+            .unwrap();
+        let ids: Vec<&str> = r.iter().map(|t| t.0.as_str()).collect();
+        assert!(ids.contains(&"p1"), "expected p1 (设计 match)");
+        assert!(ids.contains(&"p2"), "expected p2 (skill match)");
+        assert!(!ids.contains(&"p3"), "p3 should not match");
+    }
+
+    #[test]
+    fn cjk_segment_inserts_spaces_between_ideographs() {
+        use crate::storage::database::cjk_segment;
+        assert_eq!(cjk_segment("整理设计风格"), "整 理 设 计 风 格");
+        // English passes through unchanged
+        assert_eq!(cjk_segment("hello world"), "hello world");
+        // Mixed: only CJK gets spaces, English stays intact
+        assert_eq!(cjk_segment("AI 设计 skill"), "AI 设 计 skill");
+        // Idempotent
+        assert_eq!(cjk_segment("整 理"), "整 理");
+        // Empty
+        assert_eq!(cjk_segment(""), "");
+    }
+
+    #[test]
+    fn extract_project_url_prefers_github() {
+        let body = "这个项目的源码：\n\n## 项目地址\n- GitHub: https://github.com/foo/bar\n";
+        let url = Repository::extract_project_url_from_body(body).unwrap();
+        assert_eq!(url, "https://github.com/foo/bar");
+    }
+
+    #[test]
+    fn extract_project_url_skips_social_in_favor_of_github() {
+        // Even if a tweet appears earlier in the body, GitHub wins.
+        let body = "原文 https://x.com/some/status/123\n更多介绍\n## 项目地址\nhttps://github.com/foo/bar";
+        let url = Repository::extract_project_url_from_body(body).unwrap();
+        assert_eq!(url, "https://github.com/foo/bar");
+    }
+
+    #[test]
+    fn extract_project_url_falls_back_to_non_social_link() {
+        // No GitHub but has a non-social URL → use that.
+        let body = "项目主页 https://example.com/project\n推文 https://x.com/some/status/123";
+        let url = Repository::extract_project_url_from_body(body).unwrap();
+        assert_eq!(url, "https://example.com/project");
+    }
+
+    #[test]
+    fn extract_project_url_returns_none_when_only_social_links() {
+        // Only social links and no project page → None (caller falls back to source_url)
+        let body = "看到这个推文 https://x.com/foo/status/1 还有微信文章 https://mp.weixin.qq.com/s/abc";
+        assert!(Repository::extract_project_url_from_body(body).is_none());
+    }
+
+    #[test]
+    fn extract_project_url_strips_trailing_punctuation() {
+        let body = "看 https://github.com/foo/bar，挺好用的";
+        let url = Repository::extract_project_url_from_body(body).unwrap();
+        assert_eq!(url, "https://github.com/foo/bar");
+    }
+
+    #[test]
+    fn extract_project_url_returns_none_for_empty_body() {
+        assert!(Repository::extract_project_url_from_body("").is_none());
     }
 }

@@ -34,7 +34,7 @@ pub async fn generate_report(state: State<'_, AppState>) -> Result<WeeklyReport,
     let model = repo
         .get_setting("ai_model")
         .map_err(|e| format!("Failed to read AI model: {}", e))?
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
     log::info!("Generating weekly report: provider={}, model={}", provider, model);
 

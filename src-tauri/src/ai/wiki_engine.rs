@@ -131,7 +131,7 @@ async fn call_ai(
         .get_setting("ai_model")
         .ok()
         .flatten()
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
     let base_url = repo
         .get_setting("ai_custom_base_url")
@@ -155,15 +155,24 @@ async fn call_ai(
     .await
 }
 
-/// Parse JSON from AI response, stripping markdown code blocks if present.
+/// Parse JSON from an AI response. Robust to three failure modes
+/// commonly seen with relay-served models:
+///
+/// 1. ```json ...``` markdown wrappers — strip them.
+/// 2. Conversational prose followed by JSON ("Sure, here you go: {...}")
+///    — find the first balanced `{...}` and parse just that.
+/// 3. Garbage on both sides — same as (2), look for the JSON island.
+///
+/// If none of the above yields valid JSON, return the parse error.
 fn parse_ai_json(raw: &str) -> Result<serde_json::Value, String> {
     let trimmed = raw.trim();
-    let cleaned = if trimmed.starts_with("```") {
-        let without_prefix = if let Some(rest) = trimmed.strip_prefix("```json") {
-            rest
-        } else {
-            &trimmed[3..]
-        };
+
+    // Strip markdown code fences if present.
+    let stripped = if trimmed.starts_with("```") {
+        let without_prefix = trimmed
+            .strip_prefix("```json")
+            .or_else(|| trimmed.strip_prefix("```JSON"))
+            .unwrap_or(&trimmed[3..]);
         without_prefix
             .strip_suffix("```")
             .unwrap_or(without_prefix)
@@ -171,7 +180,67 @@ fn parse_ai_json(raw: &str) -> Result<serde_json::Value, String> {
     } else {
         trimmed
     };
-    serde_json::from_str(cleaned).map_err(|e| format!("JSON parse failed: {} — raw: {}", e, &cleaned[..cleaned.len().min(200)]))
+
+    // First attempt: parse the whole string as-is.
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stripped) {
+        return Ok(v);
+    }
+
+    // Fallback: scan for the first balanced JSON object. Naive bracket
+    // counting is fine here because we don't try to parse strings —
+    // serde_json does that on the candidate slice. We just need to
+    // find a candidate that ends at the right `}`.
+    if let Some(extracted) = extract_balanced_json(stripped) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&extracted) {
+            return Ok(v);
+        }
+    }
+
+    // Give up — surface the original parse error with a char-safe preview.
+    let err = serde_json::from_str::<serde_json::Value>(stripped).unwrap_err();
+    let preview: String = stripped.chars().take(200).collect();
+    Err(format!("JSON parse failed: {} — raw: {}", err, preview))
+}
+
+/// Extract the first balanced `{...}` substring, respecting string
+/// literals and escapes so braces inside JSON strings don't throw off
+/// the counter.
+fn extract_balanced_json(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let start = bytes.iter().position(|&b| b == b'{')?;
+
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut escape = false;
+    let mut i = start;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if escape {
+            escape = false;
+        } else if in_string {
+            match b {
+                b'\\' => escape = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+        } else {
+            match b {
+                b'"' => in_string = true,
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        // Slice on a UTF-8 char boundary by going through &str
+                        return Some(s[start..=i].to_string());
+                    }
+                }
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 /// Assess whether a content item has knowledge value.
@@ -227,9 +296,34 @@ pub async fn compile_content(
 
     // --- Stage 1: Discovery ---
     let locale = crate::locale::resolve_locale(&db);
-    let existing_pages = repo
-        .get_wiki_page_summaries()
-        .map_err(|e| format!("Failed to get page index: {}", e))?;
+    // Pre-filter the page index via FTS using the new content's own
+    // summary + tags + opening text as the search signal. This replaces
+    // dumping the entire wiki to the LLM on every capture.
+    //
+    // Fallback chain:
+    //   1. FTS-pre-filtered candidates (top ~30)
+    //   2. If FTS returns nothing (new topic or FTS unavailable), use the
+    //      full summary list as before — keeps the legacy guarantee that
+    //      Discovery can always see existing pages
+    let mut fts_signal = String::new();
+    fts_signal.push_str(content_summary);
+    fts_signal.push(' ');
+    fts_signal.push_str(content_tags);
+    fts_signal.push(' ');
+    fts_signal.extend(content_text.chars().take(200));
+
+    let mut existing_pages: Vec<(String, String, String)> = repo
+        .get_wiki_page_candidates(Some(&fts_signal), None, None, false, 30)
+        .map_err(|e| format!("Failed to get page candidates: {}", e))?
+        .into_iter()
+        .map(|(id, title, summary, _created_at, _url)| (id, title, summary))
+        .collect();
+
+    if existing_pages.is_empty() {
+        existing_pages = repo
+            .get_wiki_page_summaries()
+            .map_err(|e| format!("Failed to get page index: {}", e))?;
+    }
 
     let discover_system = wiki_prompts::compile_discover_system_prompt(&locale);
     let discover_user = wiki_prompts::compile_discover_user_message(
@@ -803,4 +897,58 @@ pub fn on_content_updated(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_clean_json() {
+        let v = parse_ai_json(r#"{"page_ids": ["a", "b"]}"#).unwrap();
+        assert_eq!(v["page_ids"][0], "a");
+    }
+
+    #[test]
+    fn parses_json_in_markdown_fence() {
+        let v = parse_ai_json("```json\n{\"page_ids\": [\"x\"]}\n```").unwrap();
+        assert_eq!(v["page_ids"][0], "x");
+    }
+
+    #[test]
+    fn parses_json_after_chinese_preamble() {
+        // The exact failure mode we saw with the user's relay
+        let raw = "根据你的反馈，那个不是你要找的。让我返回 JSON：\n{\"page_ids\": [\"abc\", \"def\"]}";
+        let v = parse_ai_json(raw).unwrap();
+        assert_eq!(v["page_ids"][0], "abc");
+        assert_eq!(v["page_ids"][1], "def");
+    }
+
+    #[test]
+    fn parses_json_with_braces_in_string_values() {
+        // Bracket counting must not be fooled by braces inside strings
+        let raw = r#"prelude {"answer": "this { is } tricky", "ok": true} trailing"#;
+        let v = parse_ai_json(raw).unwrap();
+        assert_eq!(v["answer"], "this { is } tricky");
+    }
+
+    #[test]
+    fn parses_json_with_escaped_quotes() {
+        let raw = r#"sure: {"answer": "she said \"hi\""}"#;
+        let v = parse_ai_json(raw).unwrap();
+        assert_eq!(v["answer"], "she said \"hi\"");
+    }
+
+    #[test]
+    fn returns_error_for_pure_prose() {
+        let result = parse_ai_json("你好！👋 有什么我可以帮你的吗？");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn does_not_panic_on_cjk_in_error_preview() {
+        // Regression for the byte-boundary panic
+        let raw: String = "你好！".repeat(100);
+        let _ = parse_ai_json(&raw);
+    }
 }

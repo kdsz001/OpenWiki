@@ -1,4 +1,4 @@
-use rusqlite::Connection;
+use rusqlite::{functions::FunctionFlags, Connection};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -6,7 +6,54 @@ pub struct Database {
     pub conn: Mutex<Connection>,
 }
 
+/// Insert a space between every adjacent CJK ideograph so that the
+/// FTS5 unicode61 tokenizer treats each character as its own token.
+/// Without this, a continuous Chinese sequence like "整理设计风格" is
+/// indexed as a single mega-token and searches for "设计" miss it.
+///
+/// English words and digits pass through unchanged, since unicode61
+/// already tokenizes them correctly at whitespace/punctuation.
+///
+/// Idempotent: applying it twice produces the same string.
+pub fn cjk_segment(input: &str) -> String {
+    fn is_cjk(c: char) -> bool {
+        matches!(c,
+            '\u{3400}'..='\u{4DBF}' |   // CJK Unified Ideographs Extension A
+            '\u{4E00}'..='\u{9FFF}' |   // CJK Unified Ideographs
+            '\u{F900}'..='\u{FAFF}' |   // CJK Compatibility Ideographs
+            '\u{20000}'..='\u{2FFFF}'   // Extensions B-F (supplementary plane)
+        )
+    }
+    let mut out = String::with_capacity(input.len() + input.len() / 4);
+    let mut prev_cjk = false;
+    for c in input.chars() {
+        let cur_cjk = is_cjk(c);
+        if cur_cjk && prev_cjk {
+            out.push(' ');
+        }
+        out.push(c);
+        prev_cjk = cur_cjk;
+    }
+    out
+}
+
 impl Database {
+    /// Register the cjk_seg() SQL function on the given connection.
+    /// Must be called once per Connection — used by both the on-disk
+    /// and in-memory constructors so the FTS triggers can call it.
+    fn register_functions(conn: &Connection) -> Result<(), Box<dyn std::error::Error>> {
+        conn.create_scalar_function(
+            "cjk_seg",
+            1,
+            FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_UTF8,
+            |ctx| {
+                let input: String = ctx.get(0).unwrap_or_default();
+                Ok(cjk_segment(&input))
+            },
+        )?;
+        Ok(())
+    }
+
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let db_path = Self::get_db_path()?;
 
@@ -17,6 +64,7 @@ impl Database {
 
         let conn = Connection::open(&db_path)?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        Self::register_functions(&conn)?;
 
         let db = Database {
             conn: Mutex::new(conn),
@@ -31,6 +79,7 @@ impl Database {
     pub fn new_in_memory() -> Result<Self, Box<dyn std::error::Error>> {
         let conn = Connection::open_in_memory()?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        Self::register_functions(&conn)?;
         let db = Database {
             conn: Mutex::new(conn),
         };
@@ -267,6 +316,75 @@ impl Database {
             }
             log::info!("Migration 013 applied: added locale columns");
         }
+
+        // Migration 014: Add FTS5 virtual table for wiki_pages.
+        // Wrapped in fallible block — if FTS5 is unavailable in the sqlite
+        // build (shouldn't happen with rusqlite "bundled"), we log and
+        // continue in degraded mode. The repository layer will detect the
+        // missing table and fall back to LIKE-based search.
+        let has_wiki_fts: bool = conn
+            .prepare("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='wiki_pages_fts'")?
+            .query_row([], |row| row.get::<_, i32>(0))
+            .map(|c| c > 0)
+            .unwrap_or(false);
+
+        if !has_wiki_fts {
+            let migration_014 = include_str!("migrations/014_add_wiki_fts.sql");
+            match conn.execute_batch(migration_014) {
+                Ok(_) => log::info!("Migration 014 applied: added wiki_pages_fts"),
+                Err(e) => log::warn!(
+                    "Migration 014 skipped (FTS5 unavailable, falling back to LIKE search): {}",
+                    e
+                ),
+            }
+        }
+
+        // Migration 015: rebuild FTS with CJK character segmentation.
+        // We detect "already applied" by checking whether the trigger
+        // body references cjk_seg — that's the marker of v2 layout.
+        let needs_015: bool = conn
+            .prepare(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type='trigger' AND name='wiki_pages_fts_insert' \
+                 AND sql LIKE '%cjk_seg%'",
+            )
+            .and_then(|mut s| s.query_row([], |row| row.get::<_, i32>(0)))
+            .map(|c| c == 0)
+            .unwrap_or(true);
+
+        if needs_015 {
+            let migration_015 = include_str!("migrations/015_wiki_fts_cjk_segment.sql");
+            match conn.execute_batch(migration_015) {
+                Ok(_) => log::info!(
+                    "Migration 015 applied: rebuilt wiki_pages_fts with CJK segmentation"
+                ),
+                Err(e) => log::warn!(
+                    "Migration 015 skipped (FTS5 unavailable, keeping legacy index): {}",
+                    e
+                ),
+            }
+        }
+
+        // Migration 016: bump stale Anthropic model IDs to current 4.X
+        // family. The old dated IDs (claude-sonnet-4-20250514 etc.) are
+        // discontinued — leaving them as the saved default would cause
+        // every API call to fail with "model not found". We rewrite
+        // exact matches only; user-chosen custom IDs are left alone.
+        let _ = conn.execute(
+            "UPDATE app_settings SET value = 'claude-sonnet-4-6' \
+             WHERE key = 'ai_model' AND value = 'claude-sonnet-4-20250514'",
+            [],
+        );
+        let _ = conn.execute(
+            "UPDATE app_settings SET value = 'claude-opus-4-7' \
+             WHERE key = 'ai_model' AND value = 'claude-opus-4-20250514'",
+            [],
+        );
+        let _ = conn.execute(
+            "UPDATE app_settings SET value = 'claude-haiku-4-5-20251001' \
+             WHERE key = 'ai_model' AND value = 'claude-3-5-haiku-20241022'",
+            [],
+        );
 
         log::info!("Database migrations completed successfully");
         Ok(())

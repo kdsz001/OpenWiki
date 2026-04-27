@@ -790,7 +790,7 @@ pub fn spawn_summary_task(
             .get_setting("ai_model")
             .ok()
             .flatten()
-            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+            .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
         // Resolve locale for summary language
         let locale = crate::locale::resolve_locale(&db);
@@ -1095,7 +1095,7 @@ pub fn spawn_clean_content_task(
             .get_setting("ai_model")
             .ok()
             .flatten()
-            .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+            .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
         let base_url = repo.get_setting("ai_custom_base_url").ok().flatten().unwrap_or_default();
 
         let provider = crate::ai::attention_analyzer::AnalysisProvider::from_str_with_base(

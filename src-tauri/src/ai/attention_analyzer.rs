@@ -865,14 +865,17 @@ pub async fn call_analysis_api(
                 max_tokens
             };
 
-            // Ollama's OpenAI-compatible endpoint + thinking models can deadlock
-            // under strict json_object mode, so we keep JSON mode off for local
-            // providers and rely on our markdown-aware JSON parser.
+            // Force `response_format: json_object` whenever we can.
+            // Without it, models — especially those served via commercial
+            // relays — happily reply with plain conversational prose
+            // ("根据你的反馈...") that breaks downstream JSON parsing.
+            //
+            // Local providers (Ollama, LM Studio) are the exception:
+            // their OpenAI-compatible shims sometimes deadlock or 400
+            // on this flag, particularly with thinking-model variants.
+            // We keep them on the markdown-aware parser fallback.
             let response_format = match provider {
-                AnalysisProvider::OpenRouter
-                | AnalysisProvider::DashScope
-                | AnalysisProvider::Custom { .. }
-                | AnalysisProvider::LmStudio { .. } => None,
+                AnalysisProvider::LmStudio { .. } => None,
                 _ => Some(ResponseFormat {
                     format_type: "json_object".to_string(),
                 }),

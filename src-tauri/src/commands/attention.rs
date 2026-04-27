@@ -189,7 +189,7 @@ pub async fn trigger_attention_analysis(
     let model = repo
         .get_setting("ai_model")
         .map_err(|e| format!("Failed to read AI model: {}", e))?
-        .unwrap_or_else(|| "claude-sonnet-4-20250514".to_string());
+        .unwrap_or_else(|| "claude-sonnet-4-6".to_string());
 
     let base_url = repo.get_setting("ai_custom_base_url").ok().flatten().unwrap_or_default();
 

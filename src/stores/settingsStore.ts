@@ -14,9 +14,9 @@ export interface AIModelOption {
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   anthropic: [
-    { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" },
-    { id: "claude-opus-4-20250514", label: "Claude Opus 4" },
-    { id: "claude-3-5-haiku-20241022", label: "Claude 3.5 Haiku" },
+    { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+    { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
   ],
   openai: [
     { id: "auto", label: "Auto" },
@@ -125,7 +125,7 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   openrouter: "OpenRouter",
-  dashscope: "DashScope",
+  dashscope: "Qwen",
   google: "Google",
   minimax: "MiniMax",
   deepseek: "DeepSeek",
@@ -273,7 +273,7 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>((set) => ({
   apiKey: "",
   provider: "anthropic",
-  model: "claude-sonnet-4-20250514",
+  model: "claude-sonnet-4-6",
   customBaseUrl: "",
   theme: "system",
   languageMode: "system" as LanguageMode,

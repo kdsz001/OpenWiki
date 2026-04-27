@@ -307,7 +307,15 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
                         prose-code:bg-orange-50 dark:prose-code:bg-orange-500/10
                         prose-code:px-1 prose-code:py-0.5 prose-code:rounded
                         prose-code:before:content-none prose-code:after:content-none"
-                        style={{ fontSize: 13, lineHeight: 1.7 }}>
+                        style={{
+                          fontSize: 13,
+                          lineHeight: 1.7,
+                          // Long URLs (GitHub repos, etc.) overflow the
+                          // narrow chat sidebar. anywhere lets the
+                          // browser break inside any character.
+                          overflowWrap: "anywhere",
+                          wordBreak: "break-word",
+                        }}>
                         <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                       </article>
                     </div>

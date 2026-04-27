@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 INSERT OR IGNORE INTO app_settings (key, value) VALUES
     ('ai_provider', 'anthropic'),
-    ('ai_model', 'claude-sonnet-4-20250514'),
+    ('ai_model', 'claude-sonnet-4-6'),
     ('ai_api_key', ''),
     ('screenshot_dir', ''),
     ('report_day', 'sunday'),
