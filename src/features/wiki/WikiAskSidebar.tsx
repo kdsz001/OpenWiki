@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Send, X, Plus, Trash2, BookOpen, Loader, ChevronLeft } from "lucide-react";
+import { Send, X, Plus, Trash2, BookOpen, Loader, ChevronLeft, ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
 import type { WikiChatSession, WikiChatMessage } from "../../types/wiki";
 import { wikiAsk, getChatSessions, getChatMessages, deleteChatSession, saveMessageAsPage, getWikiPage, getSavedMessageIds } from "../../services/wikiService";
 
@@ -316,7 +317,41 @@ export function WikiAskSidebar({ onClose, onNavigateToPage }: WikiAskSidebarProp
                           overflowWrap: "anywhere",
                           wordBreak: "break-word",
                         }}>
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            // External links open in the system browser via
+                            // the Tauri shell plugin. Without this, clicking
+                            // a link navigates the whole webview and hijacks
+                            // the app window.
+                            a: ({ href, children }) => {
+                              const isExternal = !!href && /^https?:\/\//i.test(href);
+                              return (
+                                <a
+                                  href={href}
+                                  onClick={(e) => {
+                                    if (isExternal && href) {
+                                      e.preventDefault();
+                                      openExternal(href).catch((err) =>
+                                        console.error("Failed to open external URL:", err)
+                                      );
+                                    }
+                                  }}
+                                  className="inline-flex items-baseline gap-0.5"
+                                >
+                                  {children}
+                                  {isExternal && (
+                                    <ExternalLink
+                                      size={10}
+                                      className="inline-block flex-shrink-0 opacity-60"
+                                      style={{ transform: "translateY(1px)" }}
+                                    />
+                                  )}
+                                </a>
+                              );
+                            },
+                          }}
+                        >{msg.content}</ReactMarkdown>
                       </article>
                     </div>
                     {/* Referenced pages */}
