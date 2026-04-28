@@ -91,6 +91,8 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "qwen-turbo", label: "Qwen Turbo" },
     { id: "qwen-max", label: "Qwen Max" },
     { id: "qwen-long", label: "Qwen Long" },
+    { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash（便宜快）" },
+    { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro（深度思考）" },
   ],
   google: [
     { id: "auto", label: "Auto" },

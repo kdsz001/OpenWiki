@@ -1245,7 +1245,7 @@ pub async fn test_ai_connection(
         &api_key,
         &model,
         "",
-        "Reply with the words \"connection successful\" only, nothing else.",
+        "Reply with this exact json object and nothing else: {\"status\":\"ok\"}",
         64,
         false,
     )
