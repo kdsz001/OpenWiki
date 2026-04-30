@@ -61,8 +61,7 @@
     ],
     "resources": {
       "scripts/*": "scripts/",
-      "resources/markitdown/**/*": "markitdown/",
-      "resources/openwiki_ocr_bin": "openwiki_ocr_bin"
+      "resources/markitdown/**/*": "markitdown/"
     },
     "macOS": {
       "infoPlist": "./Info.plist",

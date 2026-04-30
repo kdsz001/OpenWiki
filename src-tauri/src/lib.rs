@@ -290,6 +290,7 @@ pub fn run() {
             // When bubble closes, macOS fires Reopen because no visible windows remain.
             // We only respond if the main window is actually hidden (user closed it),
             // not when it's just behind other windows.
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 // Skip if within suppress window (bubble just closed)
                 if !is_reopen_suppressed(app) {
