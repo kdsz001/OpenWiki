@@ -32,7 +32,8 @@ fn fallback_preview(item: &CapturedContent) -> String {
 //       ├─ connect_mcp()           → backup + inject + write config
 //       └─ disconnect_mcp()        → read + remove "xiaoyun" key + write
 //
-//  Config file: ~/Library/Application Support/Claude/claude_desktop_config.json
+//  Config file (macOS/Windows): ~/Library/Application Support/Claude/claude_desktop_config.json
+//  Config file (Linux):          ~/.config/Claude/claude_desktop_config.json
 
 const MCP_SERVER_KEY: &str = "openwiki";
 
@@ -47,9 +48,7 @@ impl McpTarget {
     fn config_path(&self) -> Option<PathBuf> {
         match self {
             McpTarget::Claude => {
-                let base = dirs::data_dir().or_else(|| {
-                    dirs::home_dir().map(|h| h.join("Library").join("Application Support"))
-                })?;
+                let base = dirs::config_dir()?;
                 Some(base.join("Claude").join("claude_desktop_config.json"))
             }
             McpTarget::Openclaw => {
