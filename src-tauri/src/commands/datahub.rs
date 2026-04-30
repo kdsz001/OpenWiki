@@ -5,6 +5,37 @@ use crate::storage::repository::Repository;
 use std::path::PathBuf;
 use tauri::State;
 
+/// Open a path in the system file manager.
+/// `reveal` = true selects/highlights the item; false opens the directory itself.
+fn open_in_file_manager(path: &std::path::Path, reveal: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let mut cmd = std::process::Command::new("open");
+        if reveal {
+            cmd.arg("-R");
+        }
+        let _ = cmd.arg(path).spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let mut cmd = std::process::Command::new("explorer.exe");
+        if reveal {
+            cmd.arg("/select,");
+        }
+        let _ = cmd.arg(path).spawn();
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // xdg-open can't reveal individual files; open the parent dir instead.
+        let target = if reveal {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        let _ = std::process::Command::new("xdg-open").arg(target).spawn();
+    }
+}
+
 /// Get the default export directory (~/Downloads/OpenWiki导出/).
 fn default_export_dir() -> PathBuf {
     dirs::download_dir().unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join("Downloads"))
@@ -87,11 +118,7 @@ pub async fn export_all_single(state: State<'_, AppState>) -> Result<String, Str
     let (path, _count) =
         markdown::export_all_single_file(&repo, &export_dir).map_err(|e| e.to_string())?;
 
-    // Reveal the file in Finder
-    let _ = std::process::Command::new("open")
-        .arg("-R")
-        .arg(&path)
-        .spawn();
+    open_in_file_manager(&path, true);
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -126,11 +153,7 @@ pub async fn export_range_single(
     let (path, _count) = markdown::export_range_single_file(&start, &end, &repo, &export_dir)
         .map_err(|e| e.to_string())?;
 
-    // Reveal the file in Finder
-    let _ = std::process::Command::new("open")
-        .arg("-R")
-        .arg(&path)
-        .spawn();
+    open_in_file_manager(&path, true);
 
     Ok(path.to_string_lossy().to_string())
 }
@@ -157,10 +180,7 @@ pub async fn open_export_dir(state: State<'_, AppState>) -> Result<(), String> {
     // Ensure directory exists before opening
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
-    std::process::Command::new("open")
-        .arg(dir.to_string_lossy().to_string())
-        .spawn()
-        .map_err(|e| format!("Failed to open directory: {}", e))?;
+    open_in_file_manager(&dir, false);
 
     Ok(())
 }
@@ -169,17 +189,10 @@ pub async fn open_export_dir(state: State<'_, AppState>) -> Result<(), String> {
 pub async fn open_data_folder() -> Result<(), String> {
     let data_dir = dirs::data_dir().unwrap_or_default().join("com.openwiki.app");
 
-    // Use "open -R" to reveal in Finder, targeting the db file.
-    // macOS treats ".app" directories as application bundles,
-    // so "open com.openwiki.app/" fails. Revealing a file inside works.
     let target = data_dir.join("openwiki.db");
     let reveal_target = if target.exists() { target } else { data_dir };
 
-    std::process::Command::new("open")
-        .arg("-R")
-        .arg(reveal_target.to_string_lossy().to_string())
-        .spawn()
-        .map_err(|e| format!("Failed to open data folder: {}", e))?;
+    open_in_file_manager(&reveal_target, true);
 
     Ok(())
 }

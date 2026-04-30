@@ -29,24 +29,29 @@ impl ScreenshotWatcher {
     }
 
     pub fn get_screenshot_dir() -> PathBuf {
-        // Try to read macOS screenshot location preference
-        if let Ok(output) = std::process::Command::new("defaults")
-            .args(["read", "com.apple.screencapture", "location"])
-            .output()
+        #[cfg(target_os = "macos")]
         {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if !path.is_empty() {
-                    let p = PathBuf::from(&path);
-                    if p.exists() {
-                        return p;
+            // Try to read macOS screenshot location preference
+            if let Ok(output) = std::process::Command::new("defaults")
+                .args(["read", "com.apple.screencapture", "location"])
+                .output()
+            {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        let p = PathBuf::from(&path);
+                        if p.exists() {
+                            return p;
+                        }
                     }
                 }
             }
         }
 
-        // Fall back to Desktop
-        dirs::desktop_dir().unwrap_or_else(|| PathBuf::from("/tmp"))
+        // Fall back to Desktop (or Pictures on Linux where Desktop may not exist)
+        dirs::desktop_dir()
+            .or_else(|| dirs::picture_dir())
+            .unwrap_or_else(|| PathBuf::from("/tmp"))
     }
 
     pub fn start(&self, app: AppHandle) {

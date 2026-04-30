@@ -224,6 +224,7 @@ pub fn run() {
             commands::preferences::get_settings,
             commands::preferences::update_setting,
             commands::preferences::check_xreader_status,
+            commands::preferences::get_default_screenshot_dir,
             commands::digest::get_digest_items,
             commands::digest::digest_item,
             commands::mcp::get_mcp_status,

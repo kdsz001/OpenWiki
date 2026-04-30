@@ -292,7 +292,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   urlReadingEnabled: true,
   radarIntervalDays: 3,
   countdownDuration: 5,
-  screenshotDir: "~/Library/Application Support/com.openwiki.app/screenshots",
+  screenshotDir: "",
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
@@ -377,11 +377,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         radarIntervalDays: parseInt(settings.radar_interval_days || "3", 10),
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
-        screenshotDir:
-          settings.screenshot_dir ||
-          "~/Library/Application Support/com.openwiki.app/screenshots",
+        screenshotDir: settings.screenshot_dir || "",
         isLoaded: true,
       });
+
+      // Resolve screenshot dir default from backend if not saved yet
+      if (!settings.screenshot_dir) {
+        try {
+          const defaultDir = await invoke<string>("get_default_screenshot_dir");
+          set((prev) => ({ ...prev, screenshotDir: defaultDir }));
+        } catch {}
+      }
 
       // Load OAuth status
       try {

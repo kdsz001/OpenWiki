@@ -2,6 +2,7 @@ use crate::commands::capture::AppState;
 use crate::storage::repository::Repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tauri::State;
 
 /// Supported platforms with built-in readers (no external tools needed).
@@ -34,6 +35,26 @@ pub fn update_setting(
     let repo = Repository::new(state.db.clone());
     repo.update_setting(&key, &value)
         .map_err(|e| format!("Failed to update setting: {}", e))
+}
+
+#[tauri::command]
+pub fn get_default_screenshot_dir() -> String {
+    let path: PathBuf = {
+        #[cfg(target_os = "linux")]
+        {
+            dirs::picture_dir()
+                .map(|d| d.join("openwiki-screenshots"))
+                .or_else(|| dirs::home_dir().map(|h| h.join("Pictures").join("openwiki-screenshots")))
+                .unwrap_or_else(|| PathBuf::from("/tmp/openwiki-screenshots"))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            dirs::data_dir()
+                .map(|d| d.join("com.openwiki.app").join("screenshots"))
+                .unwrap_or_else(|| PathBuf::from("com.openwiki.app/screenshots"))
+        }
+    };
+    path.to_string_lossy().to_string()
 }
 
 #[tauri::command]
