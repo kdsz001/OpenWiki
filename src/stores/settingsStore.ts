@@ -160,20 +160,33 @@ const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
 // Track the current system theme listener so we can clean it up when theme changes
 let systemThemeCleanup: (() => void) | null = null;
 
-function applyTheme(theme: ThemeMode) {
-  // Clean up previous system theme listener
+async function applyTheme(theme: ThemeMode) {
   if (systemThemeCleanup) {
     systemThemeCleanup();
     systemThemeCleanup = null;
   }
 
   const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" && mediaQuery.matches);
+
+  let isDark: boolean;
+  if (theme === "dark") {
+    isDark = true;
+  } else if (theme === "light") {
+    isDark = false;
+  } else {
+    // "system": ask the OS directly — reliable on Linux/GNOME where WebKitGTK
+    // doesn't always propagate prefers-color-scheme from gsettings.
+    try {
+      const native = await invoke<boolean | null>("get_system_dark_mode");
+      isDark = native !== null ? native : mediaQuery.matches;
+    } catch {
+      isDark = mediaQuery.matches;
+    }
+  }
+
   document.documentElement.classList.toggle("dark", isDark);
 
-  // If "system" mode, listen for OS theme changes and auto-update
+  // Keep listening for runtime changes (e.g. user switches theme while app is open)
   if (theme === "system") {
     const handler = (e: MediaQueryListEvent) => {
       document.documentElement.classList.toggle("dark", e.matches);
@@ -349,7 +362,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ? settings.theme
         : "system") as ThemeMode;
 
-      applyTheme(theme);
+      await applyTheme(theme);
 
       const languageMode = (["system", "zh-CN", "en-US"].includes(settings.language_mode)
         ? settings.language_mode
@@ -402,7 +415,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       } catch {}
     } catch (e) {
       console.error("Failed to load settings from DB:", e);
-      applyTheme("system");
+      applyTheme("system").catch(() => {});
       set({ isLoaded: true });
     }
   },
@@ -498,7 +511,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setTheme: (theme) => {
     set({ theme });
-    applyTheme(theme);
+    applyTheme(theme).catch(console.error);
     updateSetting("theme", theme).catch((e) =>
       console.error("Failed to save theme:", e)
     );
