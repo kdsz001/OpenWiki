@@ -185,11 +185,13 @@ async function applyTheme(theme: ThemeMode) {
   }
 
   document.documentElement.classList.toggle("dark", isDark);
+  localStorage.setItem("openwiki-theme-resolved", isDark ? "dark" : "light");
 
   // Keep listening for runtime changes (e.g. user switches theme while app is open)
   if (theme === "system") {
     const handler = (e: MediaQueryListEvent) => {
       document.documentElement.classList.toggle("dark", e.matches);
+      localStorage.setItem("openwiki-theme-resolved", e.matches ? "dark" : "light");
     };
     mediaQuery.addEventListener("change", handler);
     systemThemeCleanup = () => mediaQuery.removeEventListener("change", handler);

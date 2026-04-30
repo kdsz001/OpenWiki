@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+const isLinux = document.documentElement.classList.contains("linux");
 import { ClipboardList, Target, Settings, Search, BookOpen } from "lucide-react";
 import { ContentList } from "./features/content-list/ContentList";
 import { SettingsView } from "./features/settings/SettingsView";
@@ -163,7 +166,7 @@ function App() {
     <div className="min-h-screen relative overflow-hidden bg-[#FAFAF8] dark:bg-[#0C0A09] transition-colors duration-300">
       {/* Header: single-row layout, traffic lights + brand + tabs + search in one bar */}
       <header className="sticky top-0 z-10 bg-white/30 dark:bg-white/[0.03] backdrop-blur-xl border-b border-white/10 dark:border-white/[0.06]" data-tauri-drag-region>
-        <div className="relative flex items-center pl-[78px] pr-4 h-[40px]" data-tauri-drag-region>
+        <div className={`relative flex items-center ${isLinux ? "pl-4" : "pl-[78px]"} pr-2 h-[40px]`} data-tauri-drag-region>
           {/* Brand — left side, after traffic lights */}
           <span className="text-base font-bold text-orange-500 flex-shrink-0" data-tauri-drag-region>
             OpenWiki
@@ -345,6 +348,33 @@ function App() {
               </button>
             )}
           </div>
+
+          {/* Linux custom window controls (native decorations disabled on Linux) */}
+          {isLinux && (
+            <div className="flex items-center gap-0.5 ml-2 flex-shrink-0">
+              <button
+                onClick={() => getCurrentWindow().minimize()}
+                className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 transition-colors"
+                title="Minimize"
+              >
+                <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor"><rect width="10" height="1"/></svg>
+              </button>
+              <button
+                onClick={() => getCurrentWindow().toggleMaximize()}
+                className="w-7 h-7 flex items-center justify-center rounded hover:bg-black/10 dark:hover:bg-white/10 text-gray-500 dark:text-gray-400 transition-colors"
+                title="Maximize"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.2"><rect x="0.6" y="0.6" width="8.8" height="8.8"/></svg>
+              </button>
+              <button
+                onClick={() => getCurrentWindow().close()}
+                className="w-7 h-7 flex items-center justify-center rounded hover:bg-red-500/80 hover:text-white text-gray-500 dark:text-gray-400 transition-colors"
+                title="Close"
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><line x1="1" y1="1" x2="9" y2="9"/><line x1="9" y1="1" x2="1" y2="9"/></svg>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

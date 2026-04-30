@@ -10,6 +10,18 @@
     <link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap" rel="stylesheet" />
     <title>OpenWiki</title>
     <style>html,body,#root{background:transparent!important;margin:0;padding:0}</style>
+    <script>
+      (function() {
+        // Apply cached dark/light preference to avoid flash on startup.
+        var cached = localStorage.getItem('openwiki-theme-resolved');
+        if (cached === 'dark') document.documentElement.classList.add('dark');
+        // Mark Linux so React renders custom window controls instead of native ones.
+        // Must run here (before any JS module evaluates) so App.tsx sees the class.
+        if (navigator.platform.toLowerCase().indexOf('linux') !== -1) {
+          document.documentElement.classList.add('linux');
+        }
+      })();
+    </script>
   </head>
   <body style="background:transparent!important;margin:0">
     <div id="root" style="background:transparent!important"></div>
