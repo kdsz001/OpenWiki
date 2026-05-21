@@ -2,6 +2,7 @@ use crate::commands::capture::AppState;
 use crate::storage::repository::Repository;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tauri::State;
 
 /// Supported platforms with built-in readers (no external tools needed).
@@ -34,6 +35,65 @@ pub fn update_setting(
     let repo = Repository::new(state.db.clone());
     repo.update_setting(&key, &value)
         .map_err(|e| format!("Failed to update setting: {}", e))
+}
+
+/// Returns true/false if the system dark-mode preference can be determined natively,
+/// or null (None) to let the frontend fall back to window.matchMedia.
+#[tauri::command]
+pub fn get_system_dark_mode() -> Option<bool> {
+    #[cfg(target_os = "linux")]
+    {
+        // GNOME 42+: org.gnome.desktop.interface color-scheme
+        if let Ok(out) = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "color-scheme"])
+            .output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout);
+                if s.contains("prefer-dark") {
+                    return Some(true);
+                }
+                if s.contains("prefer-light") || s.contains("default") {
+                    return Some(false);
+                }
+            }
+        }
+        // Older GNOME / KDE fallback: check GTK theme name
+        if let Ok(out) = std::process::Command::new("gsettings")
+            .args(["get", "org.gnome.desktop.interface", "gtk-theme"])
+            .output()
+        {
+            if out.status.success() {
+                let s = String::from_utf8_lossy(&out.stdout).to_lowercase();
+                return Some(s.contains("dark"));
+            }
+        }
+        Some(false)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None // matchMedia is reliable on macOS and Windows
+    }
+}
+
+#[tauri::command]
+pub fn get_default_screenshot_dir() -> String {
+    let path: PathBuf = {
+        #[cfg(target_os = "linux")]
+        {
+            dirs::picture_dir()
+                .map(|d| d.join("openwiki-screenshots"))
+                .or_else(|| dirs::home_dir().map(|h| h.join("Pictures").join("openwiki-screenshots")))
+                .unwrap_or_else(|| PathBuf::from("/tmp/openwiki-screenshots"))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            dirs::data_dir()
+                .map(|d| d.join("com.openwiki.app").join("screenshots"))
+                .unwrap_or_else(|| PathBuf::from("com.openwiki.app/screenshots"))
+        }
+    };
+    path.to_string_lossy().to_string()
 }
 
 #[tauri::command]

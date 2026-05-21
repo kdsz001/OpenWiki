@@ -14,6 +14,7 @@ if (pathname === '/bubble' || pathname === '/spotlight') {
   document.documentElement.classList.add('transparent-window')
 }
 
+
 const RootComponent =
   pathname === '/spotlight' ? SpotlightView
   : pathname === '/bubble' ? BubbleView

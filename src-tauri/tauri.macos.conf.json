@@ -1,0 +1,7 @@
+{
+  "bundle": {
+    "resources": {
+      "resources/openwiki_ocr_bin": "openwiki_ocr_bin"
+    }
+  }
+}

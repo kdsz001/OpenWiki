@@ -212,28 +212,31 @@ impl ClipboardWatcher {
     }
 }
 
-/// Detect the frontmost application on macOS using osascript.
+/// Detect the frontmost application name.
 fn detect_frontmost_app() -> String {
-    match std::process::Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to get name of first application process whose frontmost is true",
-        ])
-        .output()
+    #[cfg(target_os = "macos")]
     {
-        Ok(output) if output.status.success() => {
-            let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if name.is_empty() {
+        match std::process::Command::new("osascript")
+            .args([
+                "-e",
+                "tell application \"System Events\" to get name of first application process whose frontmost is true",
+            ])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if name.is_empty() { "Unknown".to_string() } else { name }
+            }
+            Ok(_) => "Unknown".to_string(),
+            Err(e) => {
+                log::error!("Failed to detect frontmost app: {}", e);
                 "Unknown".to_string()
-            } else {
-                name
             }
         }
-        Ok(_) => "Unknown".to_string(),
-        Err(e) => {
-            log::error!("Failed to detect frontmost app: {}", e);
-            "Unknown".to_string()
-        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Unknown".to_string()
     }
 }
 

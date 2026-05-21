@@ -160,23 +160,38 @@ const VALID_BUBBLE_POSITIONS: BubblePosition[] = [
 // Track the current system theme listener so we can clean it up when theme changes
 let systemThemeCleanup: (() => void) | null = null;
 
-function applyTheme(theme: ThemeMode) {
-  // Clean up previous system theme listener
+async function applyTheme(theme: ThemeMode) {
   if (systemThemeCleanup) {
     systemThemeCleanup();
     systemThemeCleanup = null;
   }
 
   const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  const isDark =
-    theme === "dark" ||
-    (theme === "system" && mediaQuery.matches);
-  document.documentElement.classList.toggle("dark", isDark);
 
-  // If "system" mode, listen for OS theme changes and auto-update
+  let isDark: boolean;
+  if (theme === "dark") {
+    isDark = true;
+  } else if (theme === "light") {
+    isDark = false;
+  } else {
+    // "system": ask the OS directly — reliable on Linux/GNOME where WebKitGTK
+    // doesn't always propagate prefers-color-scheme from gsettings.
+    try {
+      const native = await invoke<boolean | null>("get_system_dark_mode");
+      isDark = native !== null ? native : mediaQuery.matches;
+    } catch {
+      isDark = mediaQuery.matches;
+    }
+  }
+
+  document.documentElement.classList.toggle("dark", isDark);
+  localStorage.setItem("openwiki-theme-resolved", isDark ? "dark" : "light");
+
+  // Keep listening for runtime changes (e.g. user switches theme while app is open)
   if (theme === "system") {
     const handler = (e: MediaQueryListEvent) => {
       document.documentElement.classList.toggle("dark", e.matches);
+      localStorage.setItem("openwiki-theme-resolved", e.matches ? "dark" : "light");
     };
     mediaQuery.addEventListener("change", handler);
     systemThemeCleanup = () => mediaQuery.removeEventListener("change", handler);
@@ -292,7 +307,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   urlReadingEnabled: true,
   radarIntervalDays: 3,
   countdownDuration: 5,
-  screenshotDir: "~/Library/Application Support/com.openwiki.app/screenshots",
+  screenshotDir: "",
   totalItems: 0,
   diskUsageMB: 0,
   isLoaded: false,
@@ -349,7 +364,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         ? settings.theme
         : "system") as ThemeMode;
 
-      applyTheme(theme);
+      await applyTheme(theme);
 
       const languageMode = (["system", "zh-CN", "en-US"].includes(settings.language_mode)
         ? settings.language_mode
@@ -377,11 +392,17 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         radarIntervalDays: parseInt(settings.radar_interval_days || "3", 10),
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
-        screenshotDir:
-          settings.screenshot_dir ||
-          "~/Library/Application Support/com.openwiki.app/screenshots",
+        screenshotDir: settings.screenshot_dir || "",
         isLoaded: true,
       });
+
+      // Resolve screenshot dir default from backend if not saved yet
+      if (!settings.screenshot_dir) {
+        try {
+          const defaultDir = await invoke<string>("get_default_screenshot_dir");
+          set((prev) => ({ ...prev, screenshotDir: defaultDir }));
+        } catch {}
+      }
 
       // Load OAuth status
       try {
@@ -396,7 +417,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       } catch {}
     } catch (e) {
       console.error("Failed to load settings from DB:", e);
-      applyTheme("system");
+      applyTheme("system").catch(() => {});
       set({ isLoaded: true });
     }
   },
@@ -492,7 +513,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   setTheme: (theme) => {
     set({ theme });
-    applyTheme(theme);
+    applyTheme(theme).catch(console.error);
     updateSetting("theme", theme).catch((e) =>
       console.error("Failed to save theme:", e)
     );

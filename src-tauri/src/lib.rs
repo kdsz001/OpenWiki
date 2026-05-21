@@ -101,6 +101,11 @@ pub fn run() {
 
             // --- Intercept window close: hide instead of destroy ---
             if let Some(main_win) = app.get_webview_window("main") {
+                // On Linux, transparent + native decorations breaks titlebar button input.
+                // Remove native decorations and let the React header provide custom controls.
+                #[cfg(target_os = "linux")]
+                let _ = main_win.set_decorations(false);
+
                 let win_clone = main_win.clone();
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -218,6 +223,8 @@ pub fn run() {
             commands::preferences::get_settings,
             commands::preferences::update_setting,
             commands::preferences::check_xreader_status,
+            commands::preferences::get_default_screenshot_dir,
+            commands::preferences::get_system_dark_mode,
             commands::digest::get_digest_items,
             commands::digest::digest_item,
             commands::mcp::get_mcp_status,
@@ -283,6 +290,7 @@ pub fn run() {
             // When bubble closes, macOS fires Reopen because no visible windows remain.
             // We only respond if the main window is actually hidden (user closed it),
             // not when it's just behind other windows.
+            #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen { .. } = event {
                 // Skip if within suppress window (bubble just closed)
                 if !is_reopen_suppressed(app) {
@@ -385,20 +393,27 @@ fn save_clipboard_image(img: &arboard::ImageData) -> Option<String> {
     }
 }
 
-/// Detect the frontmost application on macOS.
+/// Detect the frontmost application name.
 fn detect_frontmost_app() -> String {
-    match std::process::Command::new("osascript")
-        .args([
-            "-e",
-            "tell application \"System Events\" to get name of first application process whose frontmost is true",
-        ])
-        .output()
+    #[cfg(target_os = "macos")]
     {
-        Ok(output) if output.status.success() => {
-            let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if name.is_empty() { "Unknown".to_string() } else { name }
+        match std::process::Command::new("osascript")
+            .args([
+                "-e",
+                "tell application \"System Events\" to get name of first application process whose frontmost is true",
+            ])
+            .output()
+        {
+            Ok(output) if output.status.success() => {
+                let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if name.is_empty() { "Unknown".to_string() } else { name }
+            }
+            _ => "Unknown".to_string(),
         }
-        _ => "Unknown".to_string(),
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "Unknown".to_string()
     }
 }
 
