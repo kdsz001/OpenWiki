@@ -34,6 +34,17 @@ export interface ContentImportResult {
   failed: string[];
 }
 
+export interface UrlImportEntry {
+  url: string;
+}
+
+export interface UrlImportResult {
+  imported: CapturedContent[];
+  skipped_duplicates: number;
+  skipped_invalid: number;
+  failed: string[];
+}
+
 export async function getAllContent(
   limit?: number,
   offset?: number
@@ -71,6 +82,12 @@ export async function importContentFiles(
   entries: ContentImportEntry[]
 ): Promise<ContentImportResult> {
   return invoke("import_content_files", { entries });
+}
+
+export async function importUrls(
+  entries: UrlImportEntry[]
+): Promise<UrlImportResult> {
+  return invoke("import_urls", { entries });
 }
 
 export async function saveSpotlightContent(

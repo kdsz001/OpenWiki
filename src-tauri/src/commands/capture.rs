@@ -52,6 +52,19 @@ pub struct ContentImportResult {
     pub failed: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct UrlImportEntry {
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportResult {
+    pub imported: Vec<CapturedContent>,
+    pub skipped_duplicates: usize,
+    pub skipped_invalid: usize,
+    pub failed: Vec<String>,
+}
+
 /// Get the captures directory, creating it if necessary.
 fn get_captures_dir() -> Result<PathBuf, String> {
     let base = dirs::data_dir()
@@ -158,6 +171,21 @@ fn normalize_imported_text(file_name: &str, content: &str) -> Option<String> {
         title_from_filename(file_name, "Imported Text"),
         trimmed
     ))
+}
+
+fn normalize_imported_url(url: &str) -> Option<String> {
+    let trimmed = url
+        .trim()
+        .trim_matches(|c: char| matches!(c, '"' | '\'' | '<' | '>' | ')' | ']'));
+    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let parsed = reqwest::Url::parse(trimmed).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => Some(parsed.to_string()),
+        _ => None,
+    }
 }
 
 fn looks_like_cid_garbled_pdf_text(text: &str) -> bool {
@@ -1042,6 +1070,57 @@ fn import_content_files_blocking(
             }
             _ => {
                 result.skipped_invalid += 1;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn import_urls(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    entries: Vec<UrlImportEntry>,
+) -> Result<UrlImportResult, String> {
+    let mut result = UrlImportResult {
+        imported: Vec::new(),
+        skipped_duplicates: 0,
+        skipped_invalid: 0,
+        failed: Vec::new(),
+    };
+
+    let mut seen = std::collections::HashSet::new();
+
+    for entry in entries {
+        let Some(url) = normalize_imported_url(&entry.url) else {
+            result.skipped_invalid += 1;
+            continue;
+        };
+
+        if !seen.insert(url.clone()) {
+            result.skipped_duplicates += 1;
+            continue;
+        }
+
+        let event = CaptureEvent {
+            content_type: "url".to_string(),
+            preview: url.chars().take(100).collect(),
+            source_app: "URL 批量导入".to_string(),
+            raw_text: Some(url.clone()),
+            image_path: None,
+        };
+
+        match save_content_auto(&state.db, event) {
+            Ok(content) => {
+                spawn_auto_url_fetch(&app, &state.db, &content);
+                result.imported.push(content);
+            }
+            Err(e) if e.contains("Duplicate content") => {
+                result.skipped_duplicates += 1;
+            }
+            Err(e) => {
+                result.failed.push(format!("{}: {}", url, e));
             }
         }
     }
