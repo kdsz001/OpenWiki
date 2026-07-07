@@ -19,6 +19,7 @@ import {
   type ContentImportEntry,
   type ContentImportKind,
   type UrlImportEntry,
+  type UrlImportProgressEvent,
 } from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
@@ -69,6 +70,7 @@ const LONG_IMPORT_NOTICE_MS = 8000;
 // Import folders in chunks so a large library doesn't read every file into
 // memory at once (or ship one huge IPC payload), and so we can show progress.
 const IMPORT_BATCH_SIZE = 20;
+const URL_IMPORT_BATCH_SIZE = 100;
 const URL_IMPORT_SAMPLE_LIMIT = 4;
 const BOOKMARK_IMPORT_ACCEPT = ".html,.htm,text/html";
 
@@ -178,6 +180,8 @@ export function ContentList() {
   const bookmarkInputRef = useRef<HTMLInputElement>(null);
   const importPickerOpenRef = useRef(false);
   const importPanelRef = useRef<HTMLDivElement>(null);
+  const activeUrlImportJobRef = useRef<string | null>(null);
+  const importStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -273,41 +277,30 @@ export function ContentList() {
     }
 
     const entries: UrlImportEntry[] = urls.map((url) => ({ url }));
+    const jobId = crypto.randomUUID();
+    activeUrlImportJobRef.current = jobId;
+    if (importStatusTimerRef.current) {
+      clearTimeout(importStatusTimerRef.current);
+      importStatusTimerRef.current = null;
+    }
     setImportStatus("saving");
-    setImportMessage(t("import.urlSaving", { count: entries.length }));
+    setImportMessage(t("import.urlQueued", { count: entries.length, batchSize: URL_IMPORT_BATCH_SIZE }));
     setIsImportPanelOpen(false);
     setIsImportTakingLong(false);
 
     try {
-      const result = await importUrls(entries);
-      await loadInitial();
-      if (result.imported.length > 0) {
-        setHighlightedIds(result.imported.map((item) => item.id));
-        setFilter("url");
-      }
-
-      const skipped = result.skipped_duplicates + result.skipped_invalid;
-      if (result.imported.length === 0 && result.failed.length > 0) {
-        setImportStatus("error");
-        setImportMessage(t("import.failedWithReason", { reason: result.failed[0] ?? "" }));
-      } else {
-        setImportStatus("done");
-        setImportMessage(t("import.done", {
-          imported: result.imported.length,
-          skipped,
-          failed: result.failed.length,
-        }));
-        setUrlImportText("");
-        setIsUrlImportOpen(false);
-      }
-      setTimeout(() => setImportStatus("idle"), 4000);
+      const queued = await importUrls(entries, jobId);
+      setImportMessage(t("import.urlQueued", { count: queued.total, batchSize: queued.batch_size }));
+      setUrlImportText("");
+      setIsUrlImportOpen(false);
     } catch (e) {
       console.error("Failed to import URLs:", e);
+      activeUrlImportJobRef.current = null;
       setImportStatus("error");
       setImportMessage(t("import.failed"));
       setTimeout(() => setImportStatus("idle"), 4000);
     }
-  }, [loadInitial, setHighlightedIds, t]);
+  }, [t]);
 
   const handleImportUrls = useCallback(async () => {
     await importUrlEntries(parsedImportUrls);
@@ -349,6 +342,60 @@ export function ContentList() {
       setTimeout(() => setImportStatus("idle"), 4000);
     }
   }, [importUrlEntries, t]);
+
+  useEffect(() => {
+    const unlisten = listen<UrlImportProgressEvent>(
+      "content:url-import-progress",
+      async (event) => {
+        const progress = event.payload;
+        if (activeUrlImportJobRef.current !== progress.job_id) return;
+
+        const skipped = progress.skipped_duplicates + progress.skipped_invalid;
+        setImportStatus(progress.done ? "done" : "saving");
+        setImportMessage(progress.done
+          ? t("import.urlDone", {
+              imported: progress.imported,
+              skipped,
+              failed: progress.failed,
+            })
+          : t("import.urlProgress", {
+              done: progress.processed,
+              total: progress.total,
+              imported: progress.imported,
+              skipped,
+              failed: progress.failed,
+            })
+        );
+
+        if (progress.imported_ids.length > 0 || progress.done) {
+          await loadInitial();
+          setFilter("url");
+        }
+        if (progress.imported_ids.length > 0) {
+          setHighlightedIds(progress.imported_ids);
+        }
+
+        if (progress.done) {
+          activeUrlImportJobRef.current = null;
+          if (importStatusTimerRef.current) {
+            clearTimeout(importStatusTimerRef.current);
+          }
+          importStatusTimerRef.current = setTimeout(() => {
+            setImportStatus("idle");
+            setImportMessage("");
+            importStatusTimerRef.current = null;
+          }, 5000);
+        }
+      }
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+      if (importStatusTimerRef.current) {
+        clearTimeout(importStatusTimerRef.current);
+        importStatusTimerRef.current = null;
+      }
+    };
+  }, [loadInitial, setHighlightedIds, t]);
 
   const importFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {

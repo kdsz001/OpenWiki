@@ -2,6 +2,7 @@ use crate::capture::content::{compute_hash, detect_url};
 use crate::storage::database::Database;
 use crate::storage::models::{CaptureEvent, CapturedContent, ContentType};
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -13,6 +14,11 @@ const APP_DATA_DIR: &str = "com.openwiki.app";
 const CAPTURES_SUBDIR: &str = "captures";
 const THUMBNAILS_SUBDIR: &str = "thumbnails";
 const THUMBNAIL_WIDTH: u32 = 200;
+const DEFAULT_URL_IMPORT_BATCH_SIZE: usize = 100;
+const URL_FETCH_CONCURRENCY_LIMIT: usize = 100;
+
+static URL_FETCH_SEMAPHORE: Lazy<Arc<tokio::sync::Semaphore>> =
+    Lazy::new(|| Arc::new(tokio::sync::Semaphore::new(URL_FETCH_CONCURRENCY_LIMIT)));
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -52,7 +58,7 @@ pub struct ContentImportResult {
     pub failed: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct UrlImportEntry {
     pub url: String,
 }
@@ -63,6 +69,27 @@ pub struct UrlImportResult {
     pub skipped_duplicates: usize,
     pub skipped_invalid: usize,
     pub failed: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportQueuedResult {
+    pub job_id: String,
+    pub total: usize,
+    pub batch_size: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UrlImportProgressEvent {
+    job_id: String,
+    total: usize,
+    processed: usize,
+    imported: usize,
+    skipped_duplicates: usize,
+    skipped_invalid: usize,
+    failed: usize,
+    imported_ids: Vec<String>,
+    first_failure: Option<String>,
+    done: bool,
 }
 
 /// Get the captures directory, creating it if necessary.
@@ -1082,7 +1109,107 @@ pub fn import_urls(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     entries: Vec<UrlImportEntry>,
-) -> Result<UrlImportResult, String> {
+    job_id: Option<String>,
+) -> Result<UrlImportQueuedResult, String> {
+    let total = entries.len();
+    let batch_size = DEFAULT_URL_IMPORT_BATCH_SIZE;
+    let job_id = job_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let db = state.db.clone();
+    let app_for_task = app.clone();
+    let job_id_for_task = job_id.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let mut processed = 0usize;
+        let mut imported = 0usize;
+        let mut skipped_duplicates = 0usize;
+        let mut skipped_invalid = 0usize;
+        let mut failed = 0usize;
+        let mut first_failure: Option<String> = None;
+
+        for batch in entries.chunks(batch_size) {
+            let batch_entries = batch.to_vec();
+            let app_for_batch = app_for_task.clone();
+            let db_for_batch = db.clone();
+
+            let batch_result = match tokio::task::spawn_blocking(move || {
+                import_urls_batch(app_for_batch, db_for_batch, batch_entries)
+            })
+            .await
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    let mut result = UrlImportResult {
+                        imported: Vec::new(),
+                        skipped_duplicates: 0,
+                        skipped_invalid: 0,
+                        failed: Vec::new(),
+                    };
+                    result
+                        .failed
+                        .push(format!("URL import batch task failed: {}", e));
+                    result
+                }
+            };
+
+            processed += batch.len();
+            imported += batch_result.imported.len();
+            skipped_duplicates += batch_result.skipped_duplicates;
+            skipped_invalid += batch_result.skipped_invalid;
+            failed += batch_result.failed.len();
+
+            if first_failure.is_none() {
+                first_failure = batch_result.failed.first().cloned();
+            }
+
+            let event = UrlImportProgressEvent {
+                job_id: job_id_for_task.clone(),
+                total,
+                processed,
+                imported,
+                skipped_duplicates,
+                skipped_invalid,
+                failed,
+                imported_ids: batch_result
+                    .imported
+                    .iter()
+                    .map(|item| item.id.clone())
+                    .collect(),
+                first_failure: first_failure.clone(),
+                done: processed >= total,
+            };
+
+            let _ = app_for_task.emit("content:url-import-progress", event);
+        }
+
+        if total == 0 {
+            let event = UrlImportProgressEvent {
+                job_id: job_id_for_task,
+                total,
+                processed: 0,
+                imported: 0,
+                skipped_duplicates: 0,
+                skipped_invalid: 0,
+                failed: 0,
+                imported_ids: Vec::new(),
+                first_failure,
+                done: true,
+            };
+            let _ = app_for_task.emit("content:url-import-progress", event);
+        }
+    });
+
+    Ok(UrlImportQueuedResult {
+        job_id,
+        total,
+        batch_size,
+    })
+}
+
+fn import_urls_batch(
+    app: tauri::AppHandle,
+    db: Arc<Database>,
+    entries: Vec<UrlImportEntry>,
+) -> UrlImportResult {
     let mut result = UrlImportResult {
         imported: Vec::new(),
         skipped_duplicates: 0,
@@ -1111,9 +1238,9 @@ pub fn import_urls(
             image_path: None,
         };
 
-        match save_content_auto(&state.db, event) {
+        match save_content_auto(&db, event) {
             Ok(content) => {
-                spawn_auto_url_fetch(&app, &state.db, &content);
+                spawn_auto_url_fetch(&app, &db, &content);
                 result.imported.push(content);
             }
             Err(e) if e.contains("Duplicate content") => {
@@ -1125,7 +1252,7 @@ pub fn import_urls(
         }
     }
 
-    Ok(result)
+    result
 }
 
 /// Find the most recently captured content item (used as fallback when
@@ -1288,6 +1415,13 @@ pub async fn retry_url_fetch(
 
     // Spawn async fetch task
     tauri::async_runtime::spawn(async move {
+        let _permit = match URL_FETCH_SEMAPHORE.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(e) => {
+                log::error!("URL fetch semaphore closed for retry {}: {}", content_id, e);
+                return;
+            }
+        };
         let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
@@ -1473,6 +1607,13 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
 
     log::info!("Spawning URL fetch for {} (url={})", content_id, url);
     tauri::async_runtime::spawn(async move {
+        let _permit = match URL_FETCH_SEMAPHORE.clone().acquire_owned().await {
+            Ok(permit) => permit,
+            Err(e) => {
+                log::error!("URL fetch semaphore closed for {}: {}", content_id, e);
+                return;
+            }
+        };
         let reader = crate::capture::url_reader::UrlReader::with_app(app_clone.clone());
         let locale = crate::locale::resolve_locale(&db_clone);
         match reader.fetch_content(&url, &locale).await {
