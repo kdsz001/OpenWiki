@@ -230,6 +230,7 @@ pub fn run() {
             commands::capture::save_spotlight_content,
             commands::capture::import_markdown_files,
             commands::capture::import_content_files,
+            commands::capture::import_urls,
             commands::capture::confirm_capture,
             commands::capture::dismiss_capture,
             commands::capture::get_pending_capture,

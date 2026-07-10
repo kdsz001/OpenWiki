@@ -34,6 +34,29 @@ export interface ContentImportResult {
   failed: string[];
 }
 
+export interface UrlImportEntry {
+  url: string;
+}
+
+export interface UrlImportQueuedResult {
+  job_id: string;
+  total: number;
+  batch_size: number;
+}
+
+export interface UrlImportProgressEvent {
+  job_id: string;
+  total: number;
+  processed: number;
+  imported: number;
+  skipped_duplicates: number;
+  skipped_invalid: number;
+  failed: number;
+  imported_ids: string[];
+  first_failure: string | null;
+  done: boolean;
+}
+
 export async function getAllContent(
   limit?: number,
   offset?: number
@@ -71,6 +94,13 @@ export async function importContentFiles(
   entries: ContentImportEntry[]
 ): Promise<ContentImportResult> {
   return invoke("import_content_files", { entries });
+}
+
+export async function importUrls(
+  entries: UrlImportEntry[],
+  jobId?: string
+): Promise<UrlImportQueuedResult> {
+  return invoke("import_urls", { entries, jobId });
 }
 
 export async function saveSpotlightContent(

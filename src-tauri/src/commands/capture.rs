@@ -2,7 +2,9 @@ use crate::capture::content::{compute_hash, detect_url};
 use crate::storage::database::Database;
 use crate::storage::models::{CaptureEvent, CapturedContent, ContentType};
 use chrono::Utc;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -14,6 +16,13 @@ const CAPTURES_SUBDIR: &str = "captures";
 const THUMBNAILS_SUBDIR: &str = "thumbnails";
 const THUMBNAIL_WIDTH: u32 = 200;
 const MIN_SUMMARY_CHARS: usize = 50;
+const URL_IMPORT_BATCH_SIZE: usize = 50;
+const URL_FETCH_CONCURRENCY_LIMIT: usize = 6;
+const MAX_URL_IMPORT_ENTRIES: usize = 10_000;
+const MAX_IMPORTED_URL_LENGTH: usize = 4_096;
+
+static URL_FETCH_SEMAPHORE: Lazy<tokio::sync::Semaphore> =
+    Lazy::new(|| tokio::sync::Semaphore::new(URL_FETCH_CONCURRENCY_LIMIT));
 
 pub struct AppState {
     pub db: Arc<Database>,
@@ -55,6 +64,39 @@ pub struct ContentImportResult {
     pub skipped_duplicates: usize,
     pub skipped_invalid: usize,
     pub failed: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UrlImportEntry {
+    pub url: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UrlImportQueuedResult {
+    pub job_id: String,
+    pub total: usize,
+    pub batch_size: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct UrlImportProgressEvent {
+    job_id: String,
+    total: usize,
+    processed: usize,
+    imported: usize,
+    skipped_duplicates: usize,
+    skipped_invalid: usize,
+    failed: usize,
+    imported_ids: Vec<String>,
+    first_failure: Option<String>,
+    done: bool,
+}
+
+#[derive(Debug, Default, PartialEq)]
+struct PreparedUrlImport {
+    urls: Vec<String>,
+    skipped_duplicates: usize,
+    skipped_invalid: usize,
 }
 
 /// Get the captures directory, creating it if necessary.
@@ -163,6 +205,60 @@ fn normalize_imported_text(file_name: &str, content: &str) -> Option<String> {
         title_from_filename(file_name, "Imported Text"),
         trimmed
     ))
+}
+
+fn normalize_imported_url(value: &str) -> Option<String> {
+    if value.len() > MAX_IMPORTED_URL_LENGTH {
+        return None;
+    }
+
+    let trimmed = value
+        .trim()
+        .trim_start_matches(|c: char| matches!(c, '"' | '\'' | '<' | '(' | '['))
+        .trim_end_matches(|c: char| matches!(c, '"' | '\'' | '>' | ')' | ']' | ',' | '.'));
+
+    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let mut parsed = reqwest::Url::parse(trimmed).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+        return None;
+    }
+
+    // Fragments do not affect the fetched document and would create duplicate records.
+    parsed.set_fragment(None);
+    Some(parsed.to_string())
+}
+
+fn validate_url_import_count(count: usize) -> Result<(), String> {
+    if count > MAX_URL_IMPORT_ENTRIES {
+        return Err(format!(
+            "A single URL import is limited to {} links",
+            MAX_URL_IMPORT_ENTRIES
+        ));
+    }
+    Ok(())
+}
+
+fn prepare_url_import(entries: &[UrlImportEntry]) -> PreparedUrlImport {
+    let mut prepared = PreparedUrlImport::default();
+    let mut seen = HashSet::new();
+
+    for entry in entries {
+        let Some(url) = normalize_imported_url(&entry.url) else {
+            prepared.skipped_invalid += 1;
+            continue;
+        };
+
+        if seen.insert(url.clone()) {
+            prepared.urls.push(url);
+        } else {
+            prepared.skipped_duplicates += 1;
+        }
+    }
+
+    prepared
 }
 
 fn looks_like_cid_garbled_pdf_text(text: &str) -> bool {
@@ -1054,6 +1150,155 @@ fn import_content_files_blocking(
     Ok(result)
 }
 
+#[tauri::command]
+pub fn import_urls(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    entries: Vec<UrlImportEntry>,
+    job_id: Option<String>,
+) -> Result<UrlImportQueuedResult, String> {
+    let total = entries.len();
+    validate_url_import_count(total)?;
+    let job_id = job_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let worker_job_id = job_id.clone();
+    let error_job_id = job_id.clone();
+    let worker_app = app.clone();
+    let error_app = app.clone();
+    let fetch_app = app;
+    let db = state.db.clone();
+    let worker_db = db.clone();
+    let fetch_db = db;
+
+    tauri::async_runtime::spawn(async move {
+        match tokio::task::spawn_blocking(move || {
+            run_url_import(worker_app, worker_db, entries, worker_job_id)
+        })
+        .await
+        {
+            Ok(imported_contents) => {
+                for content in imported_contents {
+                    let Some((content_id, url)) = auto_url_fetch_target(&content) else {
+                        continue;
+                    };
+                    queue_auto_url_fetch(fetch_app.clone(), fetch_db.clone(), content_id, url)
+                        .await;
+                }
+            }
+            Err(error) => {
+                log::error!("Bulk URL import task failed: {}", error);
+                let _ = error_app.emit(
+                    "content:url-import-progress",
+                    UrlImportProgressEvent {
+                        job_id: error_job_id,
+                        total,
+                        processed: total,
+                        imported: 0,
+                        skipped_duplicates: 0,
+                        skipped_invalid: 0,
+                        failed: 1,
+                        imported_ids: Vec::new(),
+                        first_failure: Some(format!("Bulk URL import task failed: {}", error)),
+                        done: true,
+                    },
+                );
+            }
+        }
+    });
+
+    Ok(UrlImportQueuedResult {
+        job_id,
+        total,
+        batch_size: URL_IMPORT_BATCH_SIZE,
+    })
+}
+
+fn run_url_import(
+    app: tauri::AppHandle,
+    db: Arc<Database>,
+    entries: Vec<UrlImportEntry>,
+    job_id: String,
+) -> Vec<CapturedContent> {
+    let total = entries.len();
+    let prepared = prepare_url_import(&entries);
+    let mut processed = prepared.skipped_duplicates + prepared.skipped_invalid;
+    let mut imported = 0usize;
+    let mut skipped_duplicates = prepared.skipped_duplicates;
+    let skipped_invalid = prepared.skipped_invalid;
+    let mut failed = 0usize;
+    let mut first_failure = None;
+    let mut imported_contents = Vec::new();
+
+    if prepared.urls.is_empty() {
+        let _ = app.emit(
+            "content:url-import-progress",
+            UrlImportProgressEvent {
+                job_id,
+                total,
+                processed,
+                imported,
+                skipped_duplicates,
+                skipped_invalid,
+                failed,
+                imported_ids: Vec::new(),
+                first_failure,
+                done: true,
+            },
+        );
+        return imported_contents;
+    }
+
+    for batch in prepared.urls.chunks(URL_IMPORT_BATCH_SIZE) {
+        let mut imported_ids = Vec::new();
+
+        for url in batch {
+            let event = CaptureEvent {
+                content_type: "url".to_string(),
+                preview: url.chars().take(100).collect(),
+                source_app: "URL 批量导入".to_string(),
+                raw_text: Some(url.clone()),
+                image_path: None,
+            };
+
+            match save_content_auto(&db, event) {
+                Ok(content) => {
+                    imported_ids.push(content.id.clone());
+                    imported_contents.push(content);
+                    imported += 1;
+                }
+                Err(error) if error.contains("Duplicate content") => {
+                    skipped_duplicates += 1;
+                }
+                Err(error) => {
+                    failed += 1;
+                    if first_failure.is_none() {
+                        first_failure = Some(format!("{}: {}", url, error));
+                    }
+                }
+            }
+
+            processed += 1;
+        }
+
+        let _ = app.emit(
+            "content:url-import-progress",
+            UrlImportProgressEvent {
+                job_id: job_id.clone(),
+                total,
+                processed,
+                imported,
+                skipped_duplicates,
+                skipped_invalid,
+                failed,
+                imported_ids,
+                first_failure: first_failure.clone(),
+                done: processed >= total,
+            },
+        );
+    }
+
+    imported_contents
+}
+
 /// Find the most recently captured content item (used as fallback when
 /// spotlight save hits a duplicate from the clipboard watcher).
 fn find_existing_content(db: &Arc<Database>) -> Option<CapturedContent> {
@@ -1224,6 +1469,17 @@ pub async fn retry_url_fetch(
 
     // Spawn async fetch task
     tauri::async_runtime::spawn(async move {
+        let _permit = match URL_FETCH_SEMAPHORE.acquire().await {
+            Ok(permit) => permit,
+            Err(error) => {
+                log::error!(
+                    "URL fetch semaphore closed for retry {}: {}",
+                    content_id,
+                    error
+                );
+                return;
+            }
+        };
         let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
         let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
@@ -1386,13 +1642,22 @@ fn spawn_auto_ocr(app: &tauri::AppHandle, db: &Arc<Database>, content: &Captured
 
 /// Spawn auto URL fetch for URL content in the background.
 fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &CapturedContent) {
-    if content.content_type.as_str() != "url" {
+    let Some((content_id, url)) = auto_url_fetch_target(content) else {
         return;
-    }
-    let url = match &content.source_url {
-        Some(u) => u.clone(),
-        None => return,
     };
+
+    let app = app.clone();
+    let db = db.clone();
+    tauri::async_runtime::spawn(async move {
+        queue_auto_url_fetch(app, db, content_id, url).await;
+    });
+}
+
+fn auto_url_fetch_target(content: &CapturedContent) -> Option<(String, String)> {
+    if content.content_type.as_str() != "url" {
+        return None;
+    }
+    let url = content.source_url.clone()?;
     // Skip if already fetched
     let needs_fetch = content
         .raw_text
@@ -1400,21 +1665,35 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
         .map(|text| text.is_empty() || text.as_str() == url)
         .unwrap_or(true);
     if !needs_fetch {
-        return;
+        return None;
     }
 
-    let content_id = content.id.clone();
-    let db_clone = db.clone();
-    let app_clone = app.clone();
+    Some((content.id.clone(), url))
+}
 
-    log::info!("Spawning URL fetch for {} (url={})", content_id, url);
+async fn queue_auto_url_fetch(
+    app: tauri::AppHandle,
+    db: Arc<Database>,
+    content_id: String,
+    url: String,
+) {
+    log::info!("Queueing URL fetch for {} (url={})", content_id, url);
+    let permit = match URL_FETCH_SEMAPHORE.acquire().await {
+        Ok(permit) => permit,
+        Err(error) => {
+            log::error!("URL fetch semaphore closed for {}: {}", content_id, error);
+            return;
+        }
+    };
+
     tauri::async_runtime::spawn(async move {
-        let reader = crate::capture::url_reader::UrlReader::with_app(app_clone.clone());
-        let locale = crate::locale::resolve_locale(&db_clone);
+        let _permit = permit;
+        let reader = crate::capture::url_reader::UrlReader::with_app(app.clone());
+        let locale = crate::locale::resolve_locale(&db);
         match reader.fetch_content(&url, &locale).await {
             Ok(result) => {
-                let db_for_summary = db_clone.clone();
-                let repo = crate::storage::repository::Repository::new(db_clone);
+                let db_for_summary = db.clone();
+                let repo = crate::storage::repository::Repository::new(db);
                 if let Err(e) = repo.update_content_for_url(&content_id, &result.content, &url) {
                     log::error!("Failed to update URL content: {}", e);
                 } else {
@@ -1425,18 +1704,18 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
                     );
                     spawn_summary_task(
                         db_for_summary.clone(),
-                        app_clone.clone(),
+                        app.clone(),
                         content_id.clone(),
                         result.content.clone(),
                     );
                     // Trigger AI content cleaning (independent from summary)
                     spawn_clean_content_task(
                         db_for_summary,
-                        app_clone.clone(),
+                        app.clone(),
                         content_id.clone(),
                         result.content.clone(),
                     );
-                    let _ = app_clone.emit(
+                    let _ = app.emit(
                         "content:url-fetched",
                         serde_json::json!({
                             "id": content_id,
@@ -1448,10 +1727,10 @@ fn spawn_auto_url_fetch(app: &tauri::AppHandle, db: &Arc<Database>, content: &Ca
             }
             Err(e) => {
                 log::error!("URL fetch failed for {}: {}", content_id, e);
-                let repo = crate::storage::repository::Repository::new(db_clone);
+                let repo = crate::storage::repository::Repository::new(db);
                 let fail_msg = format!("[读取失败] {}\n\n原始链接: {}", e, url);
                 let _ = repo.update_content_for_url(&content_id, &fail_msg, &url);
-                let _ = app_clone.emit(
+                let _ = app.emit(
                     "content:url-fetched",
                     serde_json::json!({ "id": content_id, "failed": true }),
                 );
@@ -2128,5 +2407,76 @@ mod tests {
         let normal = "# PDF Notes\n\nThis article mentions the literal token (cid:123) once, but the rest of the document is readable.";
 
         assert!(!looks_like_cid_garbled_pdf_text(normal));
+    }
+
+    #[test]
+    fn normalizes_imported_urls_and_removes_fragments() {
+        assert_eq!(
+            normalize_imported_url("  (https://Example.com/docs?q=1#install).  "),
+            Some("https://example.com/docs?q=1".to_string())
+        );
+        assert_eq!(
+            normalize_imported_url("http://example.com"),
+            Some("http://example.com/".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_or_unsupported_import_urls() {
+        for value in [
+            "",
+            "example.com",
+            "ftp://example.com/file",
+            "javascript:alert(1)",
+            "https://example.com/a path",
+            "https://",
+        ] {
+            assert_eq!(normalize_imported_url(value), None, "accepted {value}");
+        }
+    }
+
+    #[test]
+    fn prepares_urls_with_job_wide_deduplication() {
+        let entries = vec![
+            UrlImportEntry {
+                url: "https://example.com".to_string(),
+            },
+            UrlImportEntry {
+                url: "https://example.com/#overview".to_string(),
+            },
+            UrlImportEntry {
+                url: "(https://example.com).".to_string(),
+            },
+            UrlImportEntry {
+                url: "ftp://example.com/file".to_string(),
+            },
+            UrlImportEntry {
+                url: "https://example.org/article".to_string(),
+            },
+        ];
+
+        assert_eq!(
+            prepare_url_import(&entries),
+            PreparedUrlImport {
+                urls: vec![
+                    "https://example.com/".to_string(),
+                    "https://example.org/article".to_string(),
+                ],
+                skipped_duplicates: 2,
+                skipped_invalid: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn bounds_url_import_job_and_url_sizes() {
+        assert!(validate_url_import_count(MAX_URL_IMPORT_ENTRIES).is_ok());
+        assert!(validate_url_import_count(MAX_URL_IMPORT_ENTRIES + 1).is_err());
+
+        let oversized_url = format!(
+            "https://example.com/{}",
+            "a".repeat(MAX_IMPORTED_URL_LENGTH)
+        );
+        assert_eq!(normalize_imported_url(&oversized_url), None);
     }
 }

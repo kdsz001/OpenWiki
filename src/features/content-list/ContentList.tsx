@@ -8,15 +8,18 @@ import {
 } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
-import { CheckCircle2, FileText, FolderOpen, Image as ImageIcon, Import, LoaderCircle, XCircle } from "lucide-react";
+import { CheckCircle2, FileText, FolderOpen, Image as ImageIcon, Import, Link2, LoaderCircle, Upload, XCircle } from "lucide-react";
 import { useContentStore } from "../../stores/contentStore";
 import {
   getAllContent,
   getStorageInfo,
   getContentsByIds,
   importContentFiles,
+  importUrls,
   type ContentImportEntry,
   type ContentImportKind,
+  type UrlImportEntry,
+  type UrlImportProgressEvent,
 } from "../../services/storageService";
 import { exportAllSingle, exportRangeSingle } from "../../services/dataHubService";
 import { useSettingsStore, containsSensitiveData } from "../../stores/settingsStore";
@@ -67,6 +70,8 @@ const LONG_IMPORT_NOTICE_MS = 8000;
 // Import folders in chunks so a large library doesn't read every file into
 // memory at once (or ship one huge IPC payload), and so we can show progress.
 const IMPORT_BATCH_SIZE = 20;
+const URL_IMPORT_SAMPLE_LIMIT = 4;
+const BOOKMARK_IMPORT_ACCEPT = ".html,.htm,text/html";
 
 const isImportedDocument = (content: { source_app: string }) =>
   IMPORT_SOURCE_APPS.has(content.source_app);
@@ -104,6 +109,45 @@ const readFileAsBase64 = (file: File) => new Promise<string>((resolve, reject) =
   reader.readAsDataURL(file);
 });
 
+const normalizeUrl = (value: string): string | null => {
+  const trimmed = value
+    .trim()
+    .replace(/^[<('"[]+/, "")
+    .replace(/[>)'".,\]]+$/, "");
+
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    parsed.hash = "";
+    return parsed.href;
+  } catch {
+    return null;
+  }
+};
+
+const extractUrlsFromText = (text: string): string[] => {
+  const urls = new Set<string>();
+  const maybeHtml = /<a\s/i.test(text) || /<!doctype\s+net/i.test(text);
+  let searchableText = text;
+
+  if (maybeHtml) {
+    const doc = new DOMParser().parseFromString(text, "text/html");
+    doc.querySelectorAll("a[href]").forEach((anchor) => {
+      const url = normalizeUrl(anchor.getAttribute("href") ?? "");
+      if (url) urls.add(url);
+    });
+    searchableText = doc.body.textContent ?? "";
+  }
+
+  const matches = searchableText.match(/https?:\/\/[^\s<>"']+/gi) ?? [];
+  matches.forEach((match) => {
+    const url = normalizeUrl(match);
+    if (url) urls.add(url);
+  });
+
+  return Array.from(urls);
+};
+
 const PAGE_SIZE = 50;
 
 export function ContentList() {
@@ -131,11 +175,16 @@ export function ContentList() {
   const [importMessage, setImportMessage] = useState("");
   const [isImportTakingLong, setIsImportTakingLong] = useState(false);
   const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
+  const [isUrlImportOpen, setIsUrlImportOpen] = useState(false);
+  const [urlImportText, setUrlImportText] = useState("");
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const bookmarkInputRef = useRef<HTMLInputElement>(null);
   const importPickerOpenRef = useRef(false);
   const importPanelRef = useRef<HTMLDivElement>(null);
+  const activeUrlImportJobRef = useRef<string | null>(null);
+  const urlImportStatusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refs for scroll-to-item and infinite scroll sentinel
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -219,6 +268,145 @@ export function ContentList() {
     setIsImportPanelOpen(false);
     folderInputRef.current.click();
   }, [t]);
+
+  const parsedImportUrls = useMemo(() => extractUrlsFromText(urlImportText), [urlImportText]);
+
+  const importUrlEntries = useCallback(async (urls: string[]) => {
+    if (urls.length === 0) {
+      setImportStatus("error");
+      setImportMessage(t("import.urlEmpty"));
+      setTimeout(() => setImportStatus("idle"), 3000);
+      return;
+    }
+
+    if (urlImportStatusTimerRef.current) {
+      clearTimeout(urlImportStatusTimerRef.current);
+      urlImportStatusTimerRef.current = null;
+    }
+
+    const entries: UrlImportEntry[] = urls.map((url) => ({ url }));
+    const jobId = crypto.randomUUID();
+    activeUrlImportJobRef.current = jobId;
+    setImportStatus("saving");
+    setImportMessage(t("import.urlQueued", { count: entries.length }));
+    setIsImportPanelOpen(false);
+    setIsImportTakingLong(false);
+
+    try {
+      const queued = await importUrls(entries, jobId);
+      if (activeUrlImportJobRef.current === jobId) {
+        setImportMessage(t("import.urlQueuedBatch", {
+          count: queued.total,
+          batchSize: queued.batch_size,
+        }));
+      }
+      setUrlImportText("");
+      setIsUrlImportOpen(false);
+    } catch (error) {
+      console.error("Failed to queue URL import:", error);
+      activeUrlImportJobRef.current = null;
+      setImportStatus("error");
+      setImportMessage(t("import.failedWithReason", { reason: String(error) }));
+      setTimeout(() => setImportStatus("idle"), 4000);
+    }
+  }, [t]);
+
+  const handleImportUrls = useCallback(async () => {
+    await importUrlEntries(parsedImportUrls);
+  }, [importUrlEntries, parsedImportUrls]);
+
+  const handleChooseBookmarkFile = useCallback(() => {
+    if (!bookmarkInputRef.current) {
+      setImportStatus("error");
+      setImportMessage(t("import.failed"));
+      setTimeout(() => setImportStatus("idle"), 3000);
+      return;
+    }
+
+    importPickerOpenRef.current = true;
+    setImportStatus("picking");
+    setImportMessage(t("import.choosing"));
+    bookmarkInputRef.current.click();
+  }, [t]);
+
+  const handleBookmarkImport = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    importPickerOpenRef.current = false;
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      setImportStatus("idle");
+      setImportMessage("");
+      return;
+    }
+
+    try {
+      setImportStatus("reading");
+      setImportMessage(t("import.reading", { count: 1 }));
+      await importUrlEntries(extractUrlsFromText(await file.text()));
+    } catch (error) {
+      console.error("Failed to read bookmark file:", error);
+      setImportStatus("error");
+      setImportMessage(t("import.failed"));
+      setTimeout(() => setImportStatus("idle"), 4000);
+    }
+  }, [importUrlEntries, t]);
+
+  useEffect(() => {
+    const unlisten = listen<UrlImportProgressEvent>(
+      "content:url-import-progress",
+      async ({ payload }) => {
+        if (activeUrlImportJobRef.current !== payload.job_id) return;
+
+        const skipped = payload.skipped_duplicates + payload.skipped_invalid;
+        if (payload.done) {
+          if (payload.imported === 0 && payload.failed > 0) {
+            setImportStatus("error");
+            setImportMessage(t("import.failedWithReason", {
+              reason: payload.first_failure ?? "",
+            }));
+          } else {
+            setImportStatus("done");
+            setImportMessage(t("import.urlDone", {
+              imported: payload.imported,
+              skipped,
+              failed: payload.failed,
+            }));
+          }
+
+          await loadInitial();
+          setFilter("url");
+          if (payload.imported_ids.length > 0) {
+            setHighlightedIds(payload.imported_ids);
+          }
+          activeUrlImportJobRef.current = null;
+          urlImportStatusTimerRef.current = setTimeout(() => {
+            setImportStatus("idle");
+            setImportMessage("");
+            urlImportStatusTimerRef.current = null;
+          }, 6000);
+          return;
+        }
+
+        setImportStatus("saving");
+        setImportMessage(t("import.urlProgress", {
+          done: payload.processed,
+          total: payload.total,
+          imported: payload.imported,
+          skipped,
+          failed: payload.failed,
+        }));
+      }
+    );
+
+    return () => {
+      unlisten.then((fn) => fn());
+      if (urlImportStatusTimerRef.current) {
+        clearTimeout(urlImportStatusTimerRef.current);
+        urlImportStatusTimerRef.current = null;
+      }
+    };
+  }, [loadInitial, setHighlightedIds, t]);
 
   const importFiles = useCallback(async (files: File[]) => {
     if (files.length === 0) {
@@ -504,7 +692,7 @@ export function ContentList() {
     if (!isImportPanelOpen) return null;
     return (
       <div
-        className={`absolute top-full mt-2 z-50 w-72 rounded-xl border border-stone-200/80 bg-white p-3 shadow-xl shadow-stone-950/10 dark:border-white/[0.08] dark:bg-stone-950 dark:shadow-black/30 ${
+        className={`absolute top-full mt-2 z-50 max-h-[min(520px,calc(100vh-260px))] w-80 overflow-y-auto rounded-xl border border-stone-200/80 bg-white p-3 shadow-xl shadow-stone-950/10 dark:border-white/[0.08] dark:bg-stone-950 dark:shadow-black/30 ${
           align === "center" ? "left-1/2 -translate-x-1/2" : "right-0"
         }`}
       >
@@ -549,6 +737,78 @@ export function ContentList() {
               ))}
             </div>
           </div>
+        </div>
+
+        <input
+          ref={bookmarkInputRef}
+          type="file"
+          accept={BOOKMARK_IMPORT_ACCEPT}
+          className="hidden"
+          onChange={handleBookmarkImport}
+        />
+        <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50/80 p-2.5 dark:border-white/[0.08] dark:bg-white/[0.03]">
+          <button
+            type="button"
+            onClick={() => setIsUrlImportOpen((open) => !open)}
+            aria-expanded={isUrlImportOpen}
+            className="flex w-full items-center justify-between gap-3 text-left text-sm font-semibold text-stone-800 dark:text-stone-100"
+          >
+            <span className="flex items-center gap-2">
+              <Link2 size={15} className="text-orange-500" />
+              {t("import.urlTitle")}
+            </span>
+            <span className="shrink-0 text-[11px] font-medium text-stone-400 dark:text-stone-500">
+              {parsedImportUrls.length > 0
+                ? t("import.urlCount", { count: parsedImportUrls.length })
+                : t(isUrlImportOpen ? "import.urlCollapse" : "import.urlToggle")}
+            </span>
+          </button>
+
+          {isUrlImportOpen && (
+            <div className="mt-2 space-y-2">
+              <textarea
+                value={urlImportText}
+                onChange={(event) => setUrlImportText(event.target.value)}
+                aria-label={t("import.urlTitle")}
+                placeholder={t("import.urlPlaceholder")}
+                className="h-24 w-full resize-none rounded-md border border-stone-200 bg-white px-2.5 py-2 text-xs leading-5 text-stone-700 outline-none transition focus:border-orange-400 dark:border-white/[0.08] dark:bg-stone-900 dark:text-stone-200"
+              />
+              {parsedImportUrls.length > 0 && (
+                <div className="space-y-1 rounded-md bg-white px-2 py-1.5 dark:bg-stone-900">
+                  {parsedImportUrls.slice(0, URL_IMPORT_SAMPLE_LIMIT).map((url) => (
+                    <div key={url} className="truncate text-[11px] leading-5 text-stone-500 dark:text-stone-400">
+                      {url}
+                    </div>
+                  ))}
+                  {parsedImportUrls.length > URL_IMPORT_SAMPLE_LIMIT && (
+                    <div className="text-[11px] leading-5 text-stone-400 dark:text-stone-500">
+                      {t("import.urlMore", { count: parsedImportUrls.length - URL_IMPORT_SAMPLE_LIMIT })}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleChooseBookmarkFile}
+                  disabled={isImportBusy}
+                  className="flex items-center justify-center gap-1.5 rounded-md border border-stone-200 bg-white px-2 py-1.5 text-xs font-medium text-stone-600 transition hover:border-orange-300 hover:text-orange-500 disabled:opacity-60 dark:border-white/[0.08] dark:bg-stone-900 dark:text-stone-300"
+                >
+                  <Upload size={13} />
+                  {t("import.urlFileButton")}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportUrls}
+                  disabled={isImportBusy || parsedImportUrls.length === 0}
+                  className="flex items-center justify-center gap-1.5 rounded-md border border-orange-500 bg-orange-500 px-2 py-1.5 text-xs font-medium text-white transition hover:bg-orange-600 disabled:opacity-60"
+                >
+                  <Link2 size={13} />
+                  {t("import.urlImportButton")}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <button
