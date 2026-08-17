@@ -261,6 +261,7 @@ interface SettingsState {
   urlReadingEnabled: boolean;
   useJinaReader: boolean;
   translateForeignContent: boolean;
+  hideDockOnClose: boolean;
   radarIntervalDays: number;
   countdownDuration: number;
   screenshotDir: string;
@@ -298,6 +299,7 @@ interface SettingsState {
   setUrlReadingEnabled: (enabled: boolean) => void;
   setUseJinaReader: (enabled: boolean) => void;
   setTranslateForeignContent: (enabled: boolean) => void;
+  setHideDockOnClose: (enabled: boolean) => void;
   setRadarIntervalDays: (days: number) => void;
   setCountdownDuration: (seconds: number) => void;
   setScreenshotDir: (dir: string) => void;
@@ -326,6 +328,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   urlReadingEnabled: true,
   useJinaReader: true,
   translateForeignContent: true,
+  hideDockOnClose: false,
   radarIntervalDays: 3,
   countdownDuration: 5,
   screenshotDir: DEFAULT_SCREENSHOT_DIR,
@@ -401,6 +404,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         useJinaReader: settings.use_jina_reader !== "false",
         translateForeignContent: settings.translate_foreign_content !== "false",
+        hideDockOnClose: settings.hide_dock_on_close === "true",
         radarIntervalDays: parseInt(settings.radar_interval_days || "3", 10),
         countdownDuration: parseInt(settings.countdown_seconds || "5", 10),
         screenshotDir:
@@ -593,6 +597,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   setTranslateForeignContent: (enabled) => {
     set({ translateForeignContent: enabled });
     updateSetting("translate_foreign_content", String(enabled)).catch((e) => console.error("Failed to save translate_foreign_content:", e));
+  },
+  setHideDockOnClose: (enabled) => {
+    set({ hideDockOnClose: enabled });
+    updateSetting("hide_dock_on_close", String(enabled)).catch((e) => console.error("Failed to save hide_dock_on_close:", e));
   },
 
   setRadarIntervalDays: (days) => {

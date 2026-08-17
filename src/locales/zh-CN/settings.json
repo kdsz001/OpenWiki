@@ -122,7 +122,9 @@
   },
   "system": {
     "launchAtStartup": "开机自动启动",
-    "launchAtStartupDesc": "登录系统后自动启动 OpenWiki，默认开启，可随时关闭"
+    "launchAtStartupDesc": "登录系统后自动启动 OpenWiki，默认开启，可随时关闭",
+    "hideDockOnClose": "关闭窗口后隐藏 Dock 图标",
+    "hideDockOnCloseDesc": "关闭主窗口后 Dock 里不再显示 OpenWiki，只保留顶部菜单栏图标；点菜单栏图标或按快捷键即可重新打开"
   },
   "storage": {
     "title": "存储",

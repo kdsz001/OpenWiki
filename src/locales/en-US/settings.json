@@ -122,7 +122,9 @@
   },
   "system": {
     "launchAtStartup": "Launch at startup",
-    "launchAtStartupDesc": "Start OpenWiki automatically after login. On by default, and you can turn it off anytime."
+    "launchAtStartupDesc": "Start OpenWiki automatically after login. On by default, and you can turn it off anytime.",
+    "hideDockOnClose": "Hide Dock icon when window is closed",
+    "hideDockOnCloseDesc": "After closing the main window, OpenWiki leaves the Dock and stays only in the menu bar. Click the menu bar icon or use the shortcut to reopen."
   },
   "storage": {
     "title": "Storage",

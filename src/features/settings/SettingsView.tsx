@@ -47,6 +47,9 @@ import {
   type LanguageMode,
 } from "../../stores/settingsStore";
 
+// Dock-icon setting only makes sense on macOS.
+const IS_MAC = typeof navigator !== "undefined" && /Macintosh/i.test(navigator.userAgent);
+
 const BUBBLE_POSITION_KEYS: { value: BubblePosition; key: string; icon: string }[] = [
   { value: "bottom-right", key: "capture.positions.bottom-right", icon: "↘" },
   { value: "bottom-center", key: "capture.positions.bottom-center", icon: "↓" },
@@ -88,6 +91,7 @@ export function SettingsView() {
     urlReadingEnabled,
     useJinaReader,
     translateForeignContent,
+    hideDockOnClose,
     radarIntervalDays,
     screenshotDir,
     totalItems,
@@ -109,6 +113,7 @@ export function SettingsView() {
     setUrlReadingEnabled,
     setUseJinaReader,
     setTranslateForeignContent,
+    setHideDockOnClose,
     setRadarIntervalDays,
     loadXReaderStatus,
     oauthLoggedIn,
@@ -1020,6 +1025,15 @@ export function SettingsView() {
                 disabled={launchAtStartupLoading}
               />
             </SettingRow>
+
+            {IS_MAC && (
+              <SettingRow
+                label={t("system.hideDockOnClose")}
+                desc={t("system.hideDockOnCloseDesc")}
+              >
+                <ToggleSwitch checked={hideDockOnClose} onChange={setHideDockOnClose} />
+              </SettingRow>
+            )}
 
             <div className="p-4 flex flex-col gap-2">
               <button

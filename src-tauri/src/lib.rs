@@ -116,11 +116,19 @@ pub fn run() {
             // --- Intercept window close: hide instead of destroy ---
             if let Some(main_win) = app.get_webview_window("main") {
                 let win_clone = main_win.clone();
+                #[cfg(target_os = "macos")]
+                let app_handle = app.handle().clone();
                 main_win.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         // Prevent actual close, just hide the window
                         api.prevent_close();
                         let _ = win_clone.hide();
+                        // Optionally drop out of the Dock too, leaving only the
+                        // menu bar icon (ClashX-style). Restored in show_main_window.
+                        #[cfg(target_os = "macos")]
+                        if hide_dock_on_close_enabled(&app_handle) {
+                            set_dock_hidden(&app_handle, true);
+                        }
                     }
                 });
             }
@@ -621,10 +629,48 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Setting key: hide the Dock icon while the main window is closed (macOS only).
+/// Off by default; users can opt in under Settings → Software Update.
+#[cfg(target_os = "macos")]
+const HIDE_DOCK_ON_CLOSE_KEY: &str = "hide_dock_on_close";
+
+#[cfg(target_os = "macos")]
+static DOCK_HIDDEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(target_os = "macos")]
+fn hide_dock_on_close_enabled(app: &tauri::AppHandle) -> bool {
+    let state: tauri::State<'_, AppState> = app.state();
+    let repo = crate::storage::repository::Repository::new(state.db.clone());
+    repo.get_setting(HIDE_DOCK_ON_CLOSE_KEY)
+        .ok()
+        .flatten()
+        .map(|v| v == "true")
+        .unwrap_or(false)
+}
+
+/// Show/hide the Dock icon, tracking state so we don't call the (async,
+/// flicker-prone) TransformProcessType more than needed.
+#[cfg(target_os = "macos")]
+fn set_dock_hidden(app: &tauri::AppHandle, hidden: bool) {
+    use std::sync::atomic::Ordering;
+    if DOCK_HIDDEN.load(Ordering::SeqCst) == hidden {
+        return;
+    }
+    match app.set_dock_visibility(!hidden) {
+        Ok(()) => {
+            DOCK_HIDDEN.store(hidden, Ordering::SeqCst);
+            log::info!("Dock icon {}", if hidden { "hidden" } else { "shown" });
+        }
+        Err(e) => log::warn!("Failed to set dock visibility: {}", e),
+    }
+}
+
 fn show_main_window(app: &tauri::AppHandle, tab: Option<&str>) {
     use tauri::Emitter;
 
     if let Some(win) = app.get_webview_window("main") {
+        #[cfg(target_os = "macos")]
+        set_dock_hidden(app, false);
         let _ = win.show();
         let _ = win.set_focus();
         if let Some(tab) = tab {
