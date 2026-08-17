@@ -1,7 +1,7 @@
 {
   "name": "openwiki",
   "private": false,
-  "version": "0.3.22",
+  "version": "0.3.23",
   "description": "Desktop AI knowledge management tool for macOS and Windows — capture clipboard, build personal wiki, get AI insights",
   "license": "MIT",
   "repository": {
