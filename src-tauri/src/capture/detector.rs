@@ -565,6 +565,47 @@ fn show_bubble_without_focus(win: &tauri::WebviewWindow) {
     log::info!("Bubble window shown without stealing focus");
 }
 
+/// Find the monitor currently under the mouse cursor, so popup windows follow
+/// the user across screens instead of always landing on the primary display.
+/// Falls back to the primary monitor (then any monitor) if the cursor can't be resolved.
+pub fn monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
+    let from_cursor = app.cursor_position().ok().and_then(|cursor| {
+        // `cursor_position()` is in physical pixels. On macOS it is scaled by
+        // the primary monitor's factor while `monitor_from_point()` expects
+        // logical points (CGDisplayBounds space), so convert back. On Windows
+        // both are physical pixels in the virtual-screen space.
+        #[cfg(target_os = "macos")]
+        let (x, y) = {
+            let scale = app
+                .primary_monitor()
+                .ok()
+                .flatten()
+                .map(|m| m.scale_factor())
+                .unwrap_or(1.0);
+            (cursor.x / scale, cursor.y / scale)
+        };
+        #[cfg(not(target_os = "macos"))]
+        let (x, y) = (cursor.x, cursor.y);
+
+        let found = app.monitor_from_point(x, y).ok().flatten();
+        log::info!(
+            "monitor_at_cursor: point=({:.0}, {:.0}) → monitor origin={:?}",
+            x,
+            y,
+            found.as_ref().map(|m| m.position())
+        );
+        found
+    });
+
+    from_cursor
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .or_else(|| {
+            app.available_monitors()
+                .ok()
+                .and_then(|m| m.into_iter().next())
+        })
+}
+
 /// Dynamically create and show the bubble window at the bottom-right of the screen.
 /// If a bubble window already exists, close it first to avoid duplicates.
 fn show_bubble_window(app: &AppHandle) {
@@ -613,59 +654,52 @@ fn show_bubble_window(app: &AppHandle) {
     let win_w: f64 = if is_circle { circle_win_w } else { 340.0 };
     let win_h: f64 = if is_circle { 64.0 } else { 72.0 };
 
-    // Determine position based on bubble_position setting
-    let (x, y) = if let Some(main_win) = app.get_webview_window("main") {
-        let monitor = main_win
-            .primary_monitor()
-            .ok()
-            .flatten()
-            .or_else(|| main_win.current_monitor().ok().flatten())
-            .or_else(|| {
-                main_win
-                    .available_monitors()
-                    .ok()
-                    .and_then(|m| m.into_iter().next())
-            });
+    // Determine position based on bubble_position setting, on the monitor
+    // under the mouse cursor (multi-screen: follow the user, not the primary).
+    let (x, y) = if let Some(monitor) = monitor_at_cursor(app) {
+        let screen = monitor.size();
+        let scale = monitor.scale_factor();
+        // Monitor origin in logical (global) coordinates — (0,0) for the
+        // primary, offset for secondary screens.
+        let origin = monitor.position().to_logical::<f64>(scale);
+        let screen_w = screen.width as f64 / scale;
+        let screen_h = screen.height as f64 / scale;
+        let margin = 20.0;
+        let menu_bar_h = 30.0; // macOS menu bar height
 
-        if let Some(monitor) = monitor {
-            let screen = monitor.size();
-            let scale = monitor.scale_factor();
-            let screen_w = screen.width as f64 / scale;
-            let screen_h = screen.height as f64 / scale;
-            let margin = 20.0;
-            let menu_bar_h = 30.0; // macOS menu bar height
-
-            let x = match bubble_position.as_str() {
-                "bottom-left" | "top-left" => margin,
-                "bottom-center" | "top-center" => {
-                    if is_circle {
-                        // Center: align the 48px circle visually at center
-                        (screen_w - 48.0) / 2.0 - (win_w - 48.0) / 2.0
-                    } else {
-                        (screen_w - win_w) / 2.0
-                    }
+        let x = match bubble_position.as_str() {
+            "bottom-left" | "top-left" => margin,
+            "bottom-center" | "top-center" => {
+                if is_circle {
+                    // Center: align the 48px circle visually at center
+                    (screen_w - 48.0) / 2.0 - (win_w - 48.0) / 2.0
+                } else {
+                    (screen_w - win_w) / 2.0
                 }
-                _ => screen_w - win_w - margin, // bottom-right, top-right, default
-            };
+            }
+            _ => screen_w - win_w - margin, // bottom-right, top-right, default
+        };
 
-            let y = match bubble_position.as_str() {
-                "top-left" | "top-center" | "top-right" => margin + menu_bar_h,
-                _ => screen_h - win_h - margin - 60.0, // bottom-*, default (60 for dock)
-            };
+        let y = match bubble_position.as_str() {
+            "top-left" | "top-center" | "top-right" => margin + menu_bar_h,
+            _ => screen_h - win_h - margin - 60.0, // bottom-*, default (60 for dock)
+        };
 
-            log::info!(
-                "Bubble position: ({}, {}), style={}, pos={}, size={}x{}",
-                x,
-                y,
-                bubble_style,
-                bubble_position,
-                win_w,
-                win_h
-            );
-            (x, y)
-        } else {
-            (500.0, 500.0)
-        }
+        let x = origin.x + x;
+        let y = origin.y + y;
+
+        log::info!(
+            "Bubble position: ({}, {}), monitor origin=({}, {}), style={}, pos={}, size={}x{}",
+            x,
+            y,
+            origin.x,
+            origin.y,
+            bubble_style,
+            bubble_position,
+            win_w,
+            win_h
+        );
+        (x, y)
     } else {
         (500.0, 500.0)
     };

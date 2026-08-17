@@ -362,9 +362,29 @@ fn trigger_spotlight_capture(app: &tauri::AppHandle) {
         });
         let _ = app_clone.emit("spotlight:content-ready", payload);
 
-        // Step 6: Show spotlight window
+        // Step 6: Show spotlight window, centered on the screen under the cursor
+        // (win.center() would always pick the screen the hidden window lives on).
         if let Some(win) = app_clone.get_webview_window("spotlight") {
-            let _ = win.center();
+            let centered = capture::detector::monitor_at_cursor(&app_clone)
+                .zip(win.outer_size().ok())
+                .map(|(monitor, size)| {
+                    let scale = monitor.scale_factor();
+                    let origin = monitor.position().to_logical::<f64>(scale);
+                    let screen = monitor.size().to_logical::<f64>(scale);
+                    let win_size = size.to_logical::<f64>(win.scale_factor().unwrap_or(scale));
+                    tauri::LogicalPosition::new(
+                        origin.x + (screen.width - win_size.width) / 2.0,
+                        origin.y + (screen.height - win_size.height) / 2.0,
+                    )
+                });
+            match centered {
+                Some(pos) => {
+                    let _ = win.set_position(pos);
+                }
+                None => {
+                    let _ = win.center();
+                }
+            }
             let _ = win.show();
             let _ = win.set_focus();
         }
