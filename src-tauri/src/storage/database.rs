@@ -414,7 +414,78 @@ impl Database {
             log::info!("Migration 017 applied: added category column");
         }
 
+        // Migration 018: move saved retired preset models to supported IDs.
+        let migration_018 = include_str!("migrations/018_migrate_stale_ai_models.sql");
+        conn.execute_batch(migration_018)?;
+
         log::info!("Database migrations completed successfully");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn migration_018_replaces_stale_provider_models() {
+        let db = Database::new_in_memory().unwrap();
+        let migration = include_str!("migrations/018_migrate_stale_ai_models.sql");
+        let cases = [
+            (
+                "ai_model_anthropic",
+                "claude-opus-4-20250514",
+                "claude-opus-4-8",
+            ),
+            ("ai_model_openai", "gpt-5.2-codex", "gpt-5.6"),
+            ("ai_model_openai", "gpt-5.1-codex-max", "gpt-5.6"),
+            ("ai_model_openai", "gpt-5.1-codex", "gpt-5.6"),
+            ("ai_model_openai", "gpt-5.1-codex-mini", "gpt-5.6-terra"),
+            (
+                "ai_model_openrouter",
+                "openai/gpt-oss-120b:free",
+                "openrouter/free",
+            ),
+            (
+                "ai_model_openrouter",
+                "google/gemini-3-pro-preview",
+                "google/gemini-3.1-pro-preview",
+            ),
+            (
+                "ai_model_openrouter",
+                "deepseek/deepseek-v3.2-speciale",
+                "deepseek/deepseek-v4-flash",
+            ),
+            (
+                "ai_model_openrouter",
+                "x-ai/grok-4.1-fast",
+                "x-ai/grok-4.20",
+            ),
+        ];
+
+        for (key, stale_model, expected_model) in cases {
+            {
+                let conn = db.conn.lock().unwrap();
+                conn.execute(
+                    "INSERT INTO app_settings (key, value) VALUES (?1, ?2) \
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    [key, stale_model],
+                )
+                .unwrap();
+                conn.execute_batch(migration).unwrap();
+            }
+
+            let actual: String = db
+                .conn
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT value FROM app_settings WHERE key = ?1",
+                    [key],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(actual, expected_model, "failed to migrate {stale_model}");
+        }
     }
 }

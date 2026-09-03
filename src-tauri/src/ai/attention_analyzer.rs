@@ -567,6 +567,10 @@ fn provider_supports_response_format(provider: &AnalysisProvider) -> bool {
     )
 }
 
+fn provider_splits_reasoning(provider: &AnalysisProvider) -> bool {
+    matches!(provider, AnalysisProvider::MiniMax)
+}
+
 // ====================================================================
 // API Caller
 // ====================================================================
@@ -657,6 +661,8 @@ struct OpenAiRequest {
     response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
     enable_thinking: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_split: Option<bool>,
     // Ollama-specific: disables <think> reasoning traces on qwen3-family models.
     // Without this, Ollama's OpenAI-compatible endpoint lets qwen3.5 churn on
     // a hidden reasoning chain for minutes even on trivial prompts.
@@ -942,6 +948,11 @@ pub async fn call_analysis_api(
                 temperature: 0.5,
                 response_format,
                 enable_thinking,
+                reasoning_split: if provider_splits_reasoning(provider) {
+                    Some(true)
+                } else {
+                    None
+                },
                 think: if is_local { Some(false) } else { None },
                 stream: None,
             };
@@ -1547,6 +1558,8 @@ mod tests {
                 base_url: "http://localhost:1234/v1".to_string(),
             }
         ));
+        assert!(provider_splits_reasoning(&AnalysisProvider::MiniMax));
+        assert!(!provider_splits_reasoning(&AnalysisProvider::OpenAi));
     }
 
     #[test]
