@@ -86,8 +86,13 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
 @keyframes popOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-16px) scale(.95)}}
 
 #fx{position:fixed;inset:0;z-index:40;pointer-events:none}
-#hit{position:fixed;z-index:50;border:0;background:transparent;border-radius:50%;cursor:pointer;padding:0;display:none}
+#hit{position:fixed;z-index:50;border:0;background:transparent;border-radius:50%;cursor:grab;padding:0;display:none;touch-action:none}
 #hit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
+.tip{position:fixed;z-index:55;transform:translate(-50%,-100%);pointer-events:none;background:var(--text);color:var(--bg);
+  font-size:12px;font-weight:500;line-height:1;padding:7px 10px;border-radius:8px;white-space:nowrap;opacity:0;transition:opacity .15s}
+.tip::after{content:"";position:absolute;left:50%;bottom:-4px;width:8px;height:8px;background:var(--text);transform:translateX(-50%) rotate(45deg)}
+.tip.on{opacity:1}
 .note{position:fixed;left:20px;bottom:84px;z-index:55;max-width:min(420px,calc(100% - 260px));background:var(--text);color:var(--bg);
   font-size:12px;line-height:1.5;padding:8px 12px;border-radius:8px;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none}
 .note.on{opacity:1;transform:none}
@@ -100,7 +105,7 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
     <div class="win-title">阅读器 — 随手记下的好句子，最后都去哪了？</div>
   </div>
   <div class="doc">
-    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球，<b>点它射门</b>；也可以按 <b>Enter</b> 直接射门、<b>Esc</b> 放弃。5 秒不理它，就按现在的逻辑自动丢弃。顶部可以调球门「大小」，也可以换回「角落小球场」对比。</div>
+    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球。<b>点一下</b>自动射门；<b>按住往后拉</b>会出现皮筋、瞄准线和准星，往哪边偏就射向哪边，拉得越满球越快越高，松手射门（拉回原位再松手 = 取消）。Enter 直接射门，Esc 放弃；5 秒不理它就自动丢弃（拉弓时倒计时暂停）。</div>
     <h1>随手记下的好句子，最后都去哪了？</h1>
     <div class="by">示例文章 · 用来模拟你平时在看的网页</div>
     <p>很多人都有这样的习惯：看到一句打动自己的话，顺手复制下来，想着"以后用得上"。可过了一周再回头找，它早就淹没在聊天记录、备忘录和几十个浏览器标签页里了。</p>
@@ -145,17 +150,20 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
 </div></div>
 <button id="hit" aria-label="射门收藏"></button>
 <div class="note" id="note"></div>
+<div class="tip" id="tip">按住往后拉，松手射门</div>
 
 <script>
 const $ = (s) => document.querySelector(s);
-const bubble = $('#bubble'), cv = $('#fx'), g = cv.getContext('2d'), hit = $('#hit'), note = $('#note');
+const bubble = $('#bubble'), cv = $('#fx'), g = cv.getContext('2d'), hit = $('#hit'), note = $('#note'), tip = $('#tip');
 const popAnchor = $('#popAnchor'), pop = $('#pop');
 const COUNTDOWN = 5;
 // 角落模式的胶囊：距右 20、距底 80（给 Dock 留位置），尺寸 200×72
 const BOX = { w: 200, h: 72, right: 20, bottom: 80 };
 // 满屏模式：右下角不再有黑色底板，只放一个大球门（"大"档 170×104）
 const BIG = { w: 170, h: 104, right: 28, bottom: 88 };
-const S = { field: 'screen', target: 'goal', size: 1, sound: true, goals: 0, timeScale: 1, freeze: 0, session: null };
+// 拉弓瞄准：最多拉开 100px；拉开不到 14px 不算数；左右偏 35° 就瞄到门边；偏超过 80°（等于往球门方向推）松手算取消
+const AIM = { maxPull: 100, full: 92, dead: 14, dragStart: 10, spread: 35 * Math.PI / 180, valid: 80 * Math.PI / 180 };
+const S = { field: 'screen', target: 'goal', size: 1, sound: true, goals: 0, timeScale: 1, freeze: 0, session: null, learned: false };
 window.proto = S; // 调试：在控制台输入 proto.timeScale = 0.2 可以慢动作看
 
 // ── 控制栏 ─────────────────────────────────────────
@@ -234,12 +242,39 @@ const SFX = {
     tone('sine', 130, 62, t, 0.4, 0.004, 0.12);
     SFX.chime(t + 0.1);
   },
-  goalBig() { // 满屏模式进球：更响更长的"唰" + 低沉的"咚" + "叮"
-    if (!audio()) return; const t = AC.currentTime;
-    noise({ t, type: 'highpass', freq: 1700, q: 0.7, peak: 0.55, attack: 0.01, decay: 0.45 });
-    noise({ t, type: 'bandpass', freq: 600, q: 0.9, peak: 0.28, attack: 0.004, decay: 0.18 });
-    tone('sine', 110, 38, t, 0.8, 0.004, 0.3);
+  goalBig(power = 0.6) { // 满屏模式进球：更响更长的"唰" + 低沉的"咚" + "叮"（射得越狠越响）
+    if (!audio()) return; const t = AC.currentTime, k = 0.8 + 0.35 * power;
+    noise({ t, type: 'highpass', freq: 1700, q: 0.7, peak: 0.55 * k, attack: 0.01, decay: 0.45 });
+    noise({ t, type: 'bandpass', freq: 600, q: 0.9, peak: 0.28 * k, attack: 0.004, decay: 0.18 });
+    tone('sine', 110, 38, t, Math.min(0.95, 0.8 * k), 0.004, 0.3);
     SFX.chime(t + 0.12);
+  },
+  grab() { if (!audio()) return; tone('sine', 480, 360, AC.currentTime, 0.12, 0.003, 0.06); }, // 按住球
+  tick(step) { // 拉弓时"咔、咔"的蓄力声，越拉越高
+    if (!audio()) return; const t = AC.currentTime, f = 900 + step * 140;
+    noise({ t, type: 'bandpass', freq: f * 2, q: 5, peak: 0.12 + step * 0.012, attack: 0.001, decay: 0.03 });
+    tone('triangle', f, f * 0.9, t, 0.05, 0.001, 0.03);
+  },
+  full() { // 拉满："叮"一下
+    if (!audio()) return; const t = AC.currentTime;
+    tone('sine', 1975, 1975, t, 0.09, 0.002, 0.12);
+    noise({ t, type: 'bandpass', freq: 4200, q: 4, peak: 0.2, attack: 0.001, decay: 0.035 });
+  },
+  twang(power) { // 松手弹弦
+    if (!audio()) return; const t = AC.currentTime;
+    const o = AC.createOscillator(), f = AC.createBiquadFilter(), gn = AC.createGain();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(220 + 180 * power, t); o.frequency.exponentialRampToValueAtTime(80, t + 0.2);
+    f.type = 'lowpass'; f.frequency.setValueAtTime(2400, t); f.frequency.exponentialRampToValueAtTime(400, t + 0.2);
+    env(gn, t, 0.22 + 0.18 * power, 0.002, 0.2);
+    o.connect(f).connect(gn).connect(master); o.start(t); o.stop(t + 0.26);
+  },
+  boing() { // 取消：球弹回原位
+    if (!audio()) return; const t = AC.currentTime;
+    const o = AC.createOscillator(), gn = AC.createGain(), lfo = AC.createOscillator(), lg = AC.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(320, t); o.frequency.exponentialRampToValueAtTime(170, t + 0.3);
+    lfo.frequency.value = 16; lg.gain.value = 30; lfo.connect(lg); lg.connect(o.frequency);
+    env(gn, t, 0.16, 0.005, 0.3); o.connect(gn).connect(master);
+    o.start(t); lfo.start(t); o.stop(t + 0.36); lfo.stop(t + 0.36);
   },
   clang() { // 垃圾桶："哐当"
     if (!audio()) return; const t = AC.currentTime;
@@ -258,6 +293,7 @@ function resize() {
   cv.style.width = W + 'px'; cv.style.height = H + 'px';
   $('#win').style.top = ($('#bar').offsetHeight + 26) + 'px';
   const s = S.session;
+  if (s && s.drag) { s.drag = null; press = null; document.body.classList.remove('dragging'); } // 拉弓中改了窗口大小：这一下作废
   if (s && (s.phase === 'appear' || s.phase === 'wait')) { layout(s); placeHit(s); }
 }
 addEventListener('resize', resize);
@@ -466,9 +502,68 @@ function drawAim(s, a) { // 鼠标悬停在球上时，显示一条虚线告诉�
   g.restore();
 }
 
+// ── 拉弓时的三样提示：准星、流动的瞄准线、两根皮筋 ──
+function drawReticle(s, ox, oy) { // 准星：球会落在这里（拉满时中间变实心）
+  const D = s.drag; if (!D || !D.valid || !D.P) return;
+  const goal = S.target === 'goal', P = D.P;
+  const r = (8 + 5 * D.power) * (1 + 0.08 * Math.sin(performance.now() / 90)), ry = goal ? r : r * 0.45;
+  const shape = () => {
+    g.beginPath(); g.ellipse(P.x, P.y, r, ry, 0, 0, Math.PI * 2);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      g.moveTo(P.x + dx * (r + 2), P.y + dy * (ry + 2)); g.lineTo(P.x + dx * (r + 6), P.y + dy * (ry + 6));
+    }
+  };
+  g.save(); g.translate(ox, oy); g.lineCap = 'round';
+  shape(); g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 4.5; g.stroke();
+  shape(); g.strokeStyle = '#F97316'; g.lineWidth = 2.2; g.stroke();
+  if (D.full) { g.fillStyle = '#F97316'; g.beginPath(); g.ellipse(P.x, P.y, 3.2, goal ? 3.2 : 1.8, 0, 0, Math.PI * 2); g.fill(); }
+  g.restore();
+}
+function drawDragDots(s) { // 瞄准线：小圆点一直往目标方向"流"
+  const D = s.drag; if (!D || !D.valid || !D.path) return;
+  const { p0, c, p2 } = D.path, gap = 9;
+  g.save(); g.fillStyle = '#F97316'; g.globalAlpha *= 0.4 + 0.55 * D.power;
+  let prev = p0, acc = gap - (performance.now() / 28) % gap;
+  for (let j = 1; j <= 140; j++) {
+    const u = j / 140, p = bez(p0, c, p2, u);
+    acc += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
+    if (acc < gap) continue;
+    acc -= gap;
+    if (u > 0.08 && u < 0.93) { g.beginPath(); g.arc(p.x, p.y, 1.5 + 1.1 * D.power, 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+}
+function drawBands(s) { // 两根皮筋：拉弓时绷紧（反方向拉会变灰），松手后弹两下消失
+  const R = s.rest, b = s.ball;
+  let ux, uy, bx, by, alpha = 1, tension = 0, color = '#F97316';
+  if (s.drag && s.drag.Ld !== undefined) {
+    ux = s.drag.ux; uy = s.drag.uy; bx = b.x; by = b.y; tension = s.drag.power;
+    if (!s.drag.valid) color = '#A8A29E';
+  } else if (s.band) {
+    const B = s.band, off = B.Ld * Math.exp(-14 * B.t) * Math.cos(30 * B.t);
+    ux = B.ux; uy = B.uy; bx = R.x + ux * off; by = R.y + uy * off; alpha = 1 - clamp(B.t / 0.4, 0, 1);
+  } else if (s.snap) {
+    const d = Math.hypot(b.x - R.x, b.y - R.y); if (d < 1) return;
+    ux = (b.x - R.x) / d; uy = (b.y - R.y) / d; bx = b.x; by = b.y; color = '#A8A29E';
+    alpha = 1 - clamp(s.snap.t / 0.35, 0, 1);
+  } else return;
+  if (alpha <= 0.01) return;
+  const px = -uy, py = ux, A1 = { x: R.x + px * 20, y: R.y + py * 20 }, A2 = { x: R.x - px * 20, y: R.y - py * 20 };
+  const back = { x: bx + ux * s.r0 * 0.55, y: by + uy * s.r0 * 0.55 }, w = lerp(4, 2, tension);
+  g.save(); g.globalAlpha *= alpha; g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(A1.x, A1.y); g.lineTo(back.x, back.y); g.lineTo(A2.x, A2.y);
+  g.strokeStyle = 'rgba(28,25,23,0.35)'; g.lineWidth = w + 2; g.stroke();
+  g.strokeStyle = color; g.lineWidth = w; g.stroke();
+  for (const A of [A1, A2]) {
+    g.beginPath(); g.arc(A.x, A.y, 3.5, 0, Math.PI * 2);
+    g.fillStyle = '#FAFAF8'; g.fill(); g.strokeStyle = 'rgba(28,25,23,0.55)'; g.lineWidth = 1.5; g.stroke();
+  }
+  g.restore();
+}
+
 // ── 布局：球的起点、球门/垃圾桶的位置、飞行路线 ──
 function layout(s) {
-  const k = s.rand;
+  const k = s.rand; s.autoShot = null;
   if (S.field === 'corner') {
     const L = W - BOX.right - BOX.w, T = H - BOX.bottom - BOX.h, ground = T + 60;
     s.ground = ground;
@@ -499,7 +594,7 @@ function layout(s) {
     const v = top ? 0.2 + k * 0.1 : 0.35 + s.rand3 * 0.35;
     const p2 = { x: lerp(F.bx0, F.bx1, u), y: lerp(F.by0, F.by1, v) };
     const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
-    s.rEnd = s.r0 * 0.56;
+    s.rEnd = s.r0 * 0.56; s.autoShot = { u, v, k: 0, power: 0.6, aimed: false };
     s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.5), y: Math.min(p0.y, p2.y) - clamp(dist * 0.15, 30, 120) * (0.8 + k * 0.4) },
       dur: clamp(dist / 1700 + 0.24, 0.4, 0.72) };
   } else if (S.target === 'goal') {
@@ -516,7 +611,7 @@ function layout(s) {
 }
 
 // ── 一次"复制 → 出球 → 射门/超时"的完整流程 ─────────────
-const CHEERS = { goal: ['好球！', '漂亮！', '进了！', '世界波！'], bin: ['哐当！', '进桶了！'] };
+const CHEERS = { goal: ['好球！', '漂亮！', '进了！'], bin: ['哐当！', '进桶了！'] };
 const BUSY = ['kick', 'fly', 'net', 'scored', 'leave'];
 
 function startCapture(anchor) {
@@ -526,9 +621,10 @@ function startCapture(anchor) {
   const s = {
     phase: 'appear', t: 0, anchor, rand: Math.random(), rand2: Math.random(), rand3: Math.random(),
     remaining: COUNTDOWN, hover: false, hoverA: 0, trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0,
-    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false,
+    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false, drag: null, snap: null, band: null, shot: null,
     net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
   };
+  press = null; document.body.classList.remove('dragging'); hideTip();
   S.session = s; S.freeze = 0; layout(s);
   s.ball = { x: s.rest.x, y: s.rest.y, r: s.r0, rot: 0, sx: 1, sy: 1, a: 1, vx: 0, vy: 0, dir: 0 };
   pop.classList.remove('show', 'hide');
@@ -542,8 +638,8 @@ function placeHit(s) {
 }
 function kick() {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
-  s.lastSecond = s.remaining <= 1.05;
-  s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none';
+  s.lastSecond = s.remaining <= 1.05; s.shot = s.autoShot; s.drag = null; s.snap = null;
+  s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none'; hideTip();
   const b = s.ball;
   Object.assign(b, { x: s.rest.x, y: s.rest.y, r: s.r0, a: 1, dir: Math.atan2(s.path.c.y - s.rest.y, s.path.c.x - s.rest.x) });
   SFX.kick(S.field === 'corner' ? 0.8 : 1);
@@ -551,12 +647,12 @@ function kick() {
   else { ring(b.x, b.y, s.r0, '#F97316'); burst(b.x, b.y + s.r0 * 0.7, 7, -1, ['#A8A29E', '#D6D3D1', '#FAFAF8'], 0.45); }
 }
 function hitFront(s) { // 满屏模式：球打在后网上——定格、网兜进去、闪光、彩屑、球门抖一下
-  const N = s.net, b = s.ball;
-  N.cx = s.path.p2.x; N.cy = s.path.p2.y; N.v += 13; N.flash = 1; N.hold = 0.14;
+  const N = s.net, b = s.ball, pw = s.shot ? s.shot.power : 0.6; // 射得越狠，网兜得越深、定格越久、彩屑越多
+  N.cx = s.path.p2.x; N.cy = s.path.p2.y; N.v += 10 + 6 * pw; N.flash = 1; N.hold = 0.14;
   b.vx = (Math.random() - 0.5) * 70; b.vy = 0;
-  S.freeze = 0.08; s.shake = 0.3;
-  ring(N.cx, N.cy, 16, '#F97316');
-  burst(N.cx, N.cy, 22, -1, ['#F97316', '#FDBA74', '#FAFAF8', '#FACC15'], 1.1);
+  S.freeze = 0.06 + 0.04 * pw; s.shake = 0.3;
+  ring(N.cx, N.cy, 12 + 8 * pw, '#F97316');
+  burst(N.cx, N.cy, 16 + Math.round(12 * pw), -1, ['#F97316', '#FDBA74', '#FAFAF8', '#FACC15'], 0.9 + 0.4 * pw);
   burst(N.cx, N.cy, 10, 1, ['#F97316', '#FAFAF8'], 0.7);
   score(s);
 }
@@ -564,9 +660,8 @@ function score(s) {
   if (s.phase !== 'net') return;
   s.phase = 'scored'; s.t = 0;
   S.goals++; $('#score').textContent = `今日 ${S.goals} 球`;
-  const list = CHEERS[S.target];
-  const cheer = s.lastSecond && S.target === 'goal' ? '绝杀！' : list[Math.floor(Math.random() * list.length)];
-  if (S.target === 'bin') SFX.clang(); else if (S.field === 'corner') SFX.net(); else SFX.goalBig();
+  const cheer = shotLabel(s);
+  if (S.target === 'bin') SFX.clang(); else if (S.field === 'corner') SFX.net(); else SFX.goalBig(s.shot ? s.shot.power : 0.6);
   if (S.field === 'corner') {
     s.shake = 0.22;
     $('#msgA').textContent = cheer + '已收藏';
@@ -589,12 +684,13 @@ function showPop(s, cheer) {
 function hidePop() { if (pop.classList.contains('show')) { pop.classList.remove('show'); pop.classList.add('hide'); } }
 function expire(reason) {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
-  s.phase = 'expire'; s.t = 0; s.ball.vx = -150; hit.style.display = 'none';
+  s.phase = 'expire'; s.t = 0; s.ball.vx = -150; s.drag = null; s.snap = null; hit.style.display = 'none';
+  press = null; document.body.classList.remove('dragging'); hideTip();
   bubble.classList.add('leaving');
   showNote(reason === 'esc' ? '按了 Esc：这次不收藏。' : '5 秒没踢：按现在的逻辑自动丢弃，不收藏。');
 }
 function endSession() {
-  S.session = null; S.freeze = 0; hit.style.display = 'none';
+  S.session = null; S.freeze = 0; hit.style.display = 'none'; press = null; document.body.classList.remove('dragging'); hideTip();
   bubble.classList.remove('on', 'ok', 'leaving'); bubble.style.translate = '';
   pop.classList.remove('show', 'hide');
 }
@@ -605,6 +701,83 @@ function updateCountdownUI(s) {
 let noteTimer = 0;
 function showNote(text) { note.textContent = text; note.classList.add('on'); clearTimeout(noteTimer); noteTimer = setTimeout(hideNote, 3200); }
 function hideNote() { note.classList.remove('on'); }
+
+// ── 拉弓瞄准 ────────────────────────────────────────
+// 方向：往哪边偏就打哪边（偏 35° 到门边）；力度：拉得越满越高越快。准星永远夹在球门里——不会踢飞。
+function computeAim(s, dx, dy, power) {
+  const R = s.rest, goal = S.target === 'goal';
+  const T = goal ? { x: (s.front.bx0 + s.front.bx1) / 2, y: (s.front.by0 + s.front.by1) / 2 } : { x: s.bin.cx, y: s.bin.top };
+  let tx = T.x - R.x, ty = T.y - R.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+  const delta = Math.atan2(tx * dy - ty * dx, tx * dx + ty * dy); // 正数 = 顺时针偏
+  const k = clamp(delta / AIM.spread, -1, 1), ok = Math.abs(delta) <= AIM.valid;
+  const rEnd = goal ? s.r0 * 0.56 : s.r0 * 0.8;
+  if (goal) { // 左右看方向，高低看力度——两种手感互不干扰
+    const F = s.front, hw = (F.bx1 - F.bx0) / 2, hh = (F.by1 - F.by0) / 2;
+    const x = clamp(T.x - k * hw, F.bx0 + rEnd + 2, F.bx1 - rEnd - 2);
+    const y = clamp(T.y + lerp(0.55, -0.75, power) * hh, F.by0 + rEnd + 1, F.by1 - rEnd - 1);
+    return { ok, k, P: { x, y }, u: (x - F.bx0) / (F.bx1 - F.bx0), v: (y - F.by0) / (F.by1 - F.by0) };
+  }
+  const B = s.bin, half = B.wTop / 2 - rEnd * 0.9;
+  return { ok, k, P: { x: B.cx - k * half, y: B.top - B.ry * 0.5 }, u: 0.5, v: 0.5 };
+}
+function pathFrom(s, p0, P, power, d) { // 控制点放在"拉弓方向"上：球先沿你瞄的方向飞，再弯进落点（偏得多就是香蕉球）
+  const dist = Math.hypot(P.x - p0.x, P.y - p0.y) || 1, ang0 = Math.atan2(P.y - p0.y, P.x - p0.x);
+  let dev = Math.atan2(d.y, d.x) - ang0; dev = Math.atan2(Math.sin(dev), Math.cos(dev));
+  const a = ang0 + clamp(dev, -0.7, 0.7);
+  if (S.target === 'goal') {
+    const L = dist * 0.5, lift = dist * (0.05 + 0.16 * (1 - power));
+    return { p0, p2: P, c: { x: p0.x + Math.cos(a) * L, y: p0.y + Math.sin(a) * L - lift },
+      dur: clamp(dist / (1000 + 1600 * power) + 0.2, 0.3, 0.9) };
+  }
+  return { p0, p2: P, c: { x: p0.x + Math.cos(a) * dist * 0.4, y: Math.min(p0.y, P.y) - clamp(dist * (0.5 - 0.2 * power), 90, 320) },
+    dur: clamp(dist / (900 + 900 * power) + 0.35, 0.5, 1.0) };
+}
+function updateDrag(s, px, py) {
+  const D = s.drag, R = s.rest, vx = px - R.x, vy = py - R.y, len = Math.hypot(vx, vy);
+  const Ld = AIM.maxPull * Math.tanh(len / AIM.maxPull); // 越往外拉越"拉不动"
+  const ux = len > 0.001 ? vx / len : -0.7, uy = len > 0.001 ? vy / len : -0.7;
+  Object.assign(D, { x: R.x + ux * Ld, y: R.y + uy * Ld, ux, uy, Ld, power: clamp((Ld - AIM.dead) / (AIM.full - AIM.dead), 0, 1) });
+  const aim = computeAim(s, -ux, -uy, D.power);
+  Object.assign(D, aim, { valid: aim.ok && Ld >= AIM.dead });
+  D.path = D.valid ? pathFrom(s, { x: D.x, y: D.y }, D.P, D.power, { x: -ux, y: -uy }) : null;
+  const step = D.valid ? Math.floor(D.power * 8 + 1e-6) : 0;
+  if (step > D.lastStep) { if (step >= 8) SFX.full(); else SFX.tick(step); }
+  D.full = step >= 8; D.lastStep = step;
+}
+function launch(s) { // 松手：从拉开的位置发射，沿瞄准线飞进准星
+  const D = s.drag, b = s.ball;
+  s.shot = { k: D.k, u: D.u, v: D.v, power: D.power, aimed: true };
+  s.path = D.path; s.rEnd = S.target === 'goal' ? s.r0 * 0.56 : s.r0 * 0.8;
+  s.band = { t: 0, ux: D.ux, uy: D.uy, Ld: D.Ld };
+  s.drag = null; s.snap = null; S.learned = true;
+  s.lastSecond = s.remaining <= 1.05;
+  s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none'; hideTip();
+  Object.assign(b, { x: D.x, y: D.y, r: s.r0, a: 1, sx: 1, sy: 1, dir: Math.atan2(s.path.c.y - D.y, s.path.c.x - D.x) });
+  SFX.twang(D.power); SFX.kick(0.75 + 0.35 * D.power);
+  ring(b.x, b.y, s.r0 * (1 + 0.4 * D.power), '#F97316');
+  burst(b.x, b.y + s.r0 * 0.7, 6 + Math.round(6 * D.power), -1, ['#A8A29E', '#D6D3D1', '#FAFAF8'], 0.45 + 0.3 * D.power);
+}
+function cancelDrag(s) { // 取消：球弹回原位，倒计时继续
+  const D = s.drag; if (!D) return;
+  s.drag = null; document.body.classList.remove('dragging');
+  if (D.Ld !== undefined) { s.snap = { t: 0, x: D.x - s.rest.x, y: D.y - s.rest.y }; SFX.boing(); }
+}
+function shotLabel(s) { // 按射门方式给不同的喝彩
+  if (s.lastSecond && S.target === 'goal') return '绝杀！';
+  const sh = s.shot, list = CHEERS[S.target];
+  if (S.target === 'goal' && sh) {
+    if (sh.v < 0.32 && Math.abs(sh.u - 0.5) > 0.28) return '世界波！';
+    if (sh.aimed && Math.abs(sh.k) > 0.65) return '香蕉球！';
+    if (sh.aimed && sh.power > 0.9) return '暴力抽射！';
+    if (sh.aimed && sh.power < 0.25) return '推射破门！';
+  }
+  return list[Math.floor(Math.random() * list.length)];
+}
+function showTip(s) { // 第一次把鼠标放到球上时提示玩法；拉过一次就不再出现
+  if (S.learned || S.field !== 'screen' || !s || s.phase !== 'wait' || s.drag) return;
+  tip.style.left = s.rest.x + 'px'; tip.style.top = s.rest.y - s.r0 * 1.2 - 12 + 'px'; tip.classList.add('on');
+}
+function hideTip() { tip.classList.remove('on'); }
 
 // 角落模式：球进网后的小物理——撞后网 → 网鼓起 → 球落地弹两下
 function hitNet(s, x, y) {
@@ -667,6 +840,7 @@ function update(dt) {
   stepFx(dt);
   const s = S.session; if (!s) return;
   s.t += dt;
+  if (s.band) { s.band.t += dt; if (s.band.t > 0.4) s.band = null; } // 松手后皮筋弹两下
   s.bulgeV += (-230 * s.bulge - 9 * s.bulgeV) * dt; s.bulge += s.bulgeV * dt; // 角落球网弹簧
   s.wobV += (-260 * s.wob - 7 * s.wobV) * dt; s.wob += s.wobV * dt;           // 垃圾桶弹簧
   const N = s.net; N.v += (-210 * N.amp - 9 * N.v) * dt; N.amp += N.v * dt;   // 大球门的网
@@ -674,7 +848,7 @@ function update(dt) {
   s.shake = Math.max(0, s.shake - dt);
   s.hoverA = lerp(s.hoverA, s.hover && s.phase === 'wait' ? 1 : 0, 1 - Math.exp(-dt * 14));
   const b = s.ball;
-  if (s.phase === 'appear' || s.phase === 'wait') {
+  if ((s.phase === 'appear' || s.phase === 'wait') && !s.drag) { // 拉弓时倒计时暂停
     s.remaining -= dt; updateCountdownUI(s);
     if (s.remaining <= 0) { expire('timeout'); return; }
   }
@@ -687,9 +861,22 @@ function update(dt) {
       if (k >= 1) { s.phase = 'wait'; s.t = 0; s.rise = 0; }
       break;
     }
-    case 'wait':
-      b.r = s.r0 * (1 + 0.07 * s.hoverA); b.x = s.rest.x; b.y = s.rest.y; b.a = 1;
+    case 'wait': {
+      b.a = 1;
+      if (s.drag && s.drag.Ld !== undefined) { // 拉弓中：球跟着手，沿拉的方向被拉长，拉满时轻轻发抖
+        const D = s.drag, j = D.full ? 1.6 : 0;
+        b.x = D.x + (Math.random() - 0.5) * j; b.y = D.y + (Math.random() - 0.5) * j; b.r = s.r0;
+        b.dir = Math.atan2(D.uy, D.ux); b.sx = 1 + 0.14 * D.power; b.sy = 1 / b.sx;
+      } else if (s.snap) { // 取消后弹回原位
+        const q = s.snap; q.t += dt;
+        const e = Math.exp(-7 * q.t) * Math.cos(20 * q.t);
+        b.x = s.rest.x + q.x * e; b.y = s.rest.y + q.y * e; b.r = s.r0; b.sx = b.sy = 1;
+        if (q.t > 0.6) s.snap = null;
+      } else {
+        b.r = s.r0 * (1 + 0.07 * s.hoverA); b.x = s.rest.x; b.y = s.rest.y; b.sx = b.sy = 1;
+      }
       break;
+    }
     case 'kick': { // 触球瞬间：球被踢扁一下
       const k = clamp(s.t / 0.07, 0, 1), q = Math.sin(Math.PI * k);
       b.sx = 1 - 0.2 * q; b.sy = 1 + 0.24 * q;
@@ -753,15 +940,17 @@ function render() {
     g.save(); g.globalAlpha = s.fade * (s.phase === 'appear' ? clamp(s.t / 0.25, 0, 1) : 1);
     if (bigGoal) drawGoalBack(s.front, s.net, ox, oy);
     else if (S.target === 'bin') drawBinBack(s.bin, s.wob, ox, oy);
+    drawReticle(s, ox, oy);
     if (corner && inPlay) drawShadow(b.x, s.ground, s.r0, clamp((s.ground - b.y - b.r) / 50, 0, 1), b.a);
-    else if (!corner && ['appear', 'wait', 'kick'].includes(s.phase)) drawShadow(b.x, s.rest.y + s.r0 + 3, b.r, 0, b.a);
+    else if (!corner && ['appear', 'wait', 'kick'].includes(s.phase)) drawShadow(b.x, b.y + s.r0 + 3, b.r, 0, b.a);
     drawTrail(s);
     drawAim(s, s.hoverA);
-    if (!bigGoal || ballBehind) drawBall(b);
+    drawDragDots(s);
+    if (!bigGoal || ballBehind) { drawBands(s); drawBall(b); }
     if (bigGoal) drawGoalFrame(s.front, ox, oy);
     else if (S.target === 'goal') drawGoal(s.goal, s.bulge, ox);
     else drawBinFront(s.bin, s.wob, ox, oy);
-    if (bigGoal && !ballBehind) drawBall(b);
+    if (bigGoal && !ballBehind) { drawBands(s); drawBall(b); }
     if (!corner && ['appear', 'wait', 'kick', 'fly'].includes(s.phase)) {
       drawCountdownLine(s.base, clamp(s.remaining / COUNTDOWN, 0, 1), ox, oy);
     }
@@ -770,14 +959,46 @@ function render() {
   drawFx();
 }
 
-// ── 输入 ──
-hit.addEventListener('click', () => kick());
-hit.addEventListener('pointerenter', () => { if (S.session) S.session.hover = true; });
-hit.addEventListener('pointerleave', () => { if (S.session) S.session.hover = false; });
+// ── 输入：点一下 = 自动射门；按住拖 = 拉弓瞄准 ──
+let press = null;
+hit.addEventListener('pointerdown', (e) => {
+  const s = S.session;
+  if (e.button !== 0 || !s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
+  e.preventDefault();
+  if (s.phase === 'appear') { s.phase = 'wait'; s.t = 0; s.rise = 0; }
+  try { hit.setPointerCapture(e.pointerId); } catch { /* 模拟事件没有真实指针，忽略 */ }
+  press = { id: e.pointerId, sx: e.clientX, sy: e.clientY, offX: s.rest.x - e.clientX, offY: s.rest.y - e.clientY };
+  s.snap = null;
+});
+hit.addEventListener('pointermove', (e) => {
+  const s = S.session;
+  if (!press || e.pointerId !== press.id || !s || s.phase !== 'wait') return;
+  if (!s.drag) {
+    if (S.field !== 'screen' || Math.hypot(e.clientX - press.sx, e.clientY - press.sy) < AIM.dragStart) return;
+    s.drag = { lastStep: 0, full: false, valid: false, power: 0 };
+    s.hover = false; hideTip(); document.body.classList.add('dragging'); SFX.grab();
+  }
+  updateDrag(s, e.clientX + press.offX, e.clientY + press.offY);
+});
+function endPress(e, cancelled) {
+  if (!press || e.pointerId !== press.id) return;
+  press = null; document.body.classList.remove('dragging');
+  try { hit.releasePointerCapture(e.pointerId); } catch { /* 同上 */ }
+  const s = S.session; if (!s || s.phase !== 'wait') return;
+  if (!s.drag) { if (!cancelled) kick(); return; } // 没拖动 = 点一下
+  if (!cancelled && s.drag.valid) launch(s); else cancelDrag(s);
+}
+hit.addEventListener('pointerup', (e) => endPress(e, false));
+hit.addEventListener('pointercancel', (e) => endPress(e, true));
+hit.addEventListener('click', (e) => { if (e.detail === 0) kick(); }); // 键盘 Tab 到球上按空格也能射门
+hit.addEventListener('pointerenter', () => { const s = S.session; if (s) { s.hover = true; showTip(s); } });
+hit.addEventListener('pointerleave', () => { if (S.session) S.session.hover = false; hideTip(); });
 addEventListener('keydown', (e) => {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
-  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); kick(); }
-  else if (e.key === 'Escape') { e.preventDefault(); expire('esc'); }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (s.drag) { press = null; cancelDrag(s); } else expire('esc'); // 正在拉弓时，Esc 先取消这一下
+  } else if (e.key === 'Enter' && !s.drag) { e.preventDefault(); e.stopPropagation(); kick(); }
 }, true);
 
 resize();
