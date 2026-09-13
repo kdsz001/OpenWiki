@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenWiki 足球模式 · 原型</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --accent:#F97316; --accent-hover:#EA580C; --accent-soft:#FFF7ED;
+  --bg:#FAFAF8; --surface:#FFFFFF; --raised:#F5F5F0; --border:#E7E5E4;
+  --text:#1C1917; --text2:#57534E; --muted:#A8A29E;
+  --bubble:rgb(15,15,30); --success:#16A34A;
+  --font:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:var(--font);color:var(--text);background:#DAD6CF}
+
+/* 模拟桌面 */
+.win{position:fixed;left:50%;transform:translateX(-50%);top:84px;bottom:92px;width:min(760px,calc(100% - 64px));
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 20px 50px rgba(28,25,23,.18);
+  display:flex;flex-direction:column;overflow:hidden}
+.win-bar{height:36px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--raised)}
+.dot{width:11px;height:11px;border-radius:50%}
+.win-title{flex:1;text-align:center;font-size:12px;color:var(--text2);margin-right:52px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc{flex:1;overflow:auto;padding:24px 44px 40px}
+.doc h1{font-size:24px;line-height:1.3;margin:0 0 6px;font-weight:700}
+.doc .by{font-size:11px;color:var(--muted);margin-bottom:20px}
+.doc p{font-size:15px;line-height:1.85;color:var(--text2);margin:0 0 14px}
+.doc ::selection{background:#FED7AA}
+.howto{font-size:13px;line-height:1.7;color:var(--text);background:var(--accent-soft);border:1px solid #FED7AA;border-radius:12px;padding:12px 14px;margin-bottom:22px}
+.howto b{font-weight:600}
+.dock{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:10px;padding:8px 10px;
+  background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.6);border-radius:18px}
+.dock i{width:40px;height:40px;border-radius:10px;background:#C9C4BC;display:block}
+
+/* 原型控制栏 */
+.bar{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;flex-wrap:wrap;justify-content:center;
+  gap:10px;width:max-content;max-width:calc(100% - 24px);padding:8px 10px;background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 6px 24px rgba(28,25,23,.1)}
+.brand{font-size:13px;font-weight:700;padding:0 4px}
+.grp{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.seg{display:flex;background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:2px}
+.seg button{border:0;background:transparent;font:500 12px var(--font);color:var(--text2);padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(28,25,23,.12)}
+.seg small{color:var(--accent);font-size:10px;margin-left:3px;font-weight:600}
+.switch{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
+.switch input{appearance:none;-webkit-appearance:none;width:30px;height:18px;border-radius:9px;background:var(--border);position:relative;cursor:pointer;margin:0;transition:background .15s}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}
+.switch input:checked{background:var(--accent)}
+.switch input:checked::after{transform:translateX(12px)}
+.go{border:0;background:var(--accent);color:#fff;font:600 12px var(--font);padding:7px 12px;border-radius:6px;cursor:pointer}
+.go:hover{background:var(--accent-hover)}
+.score{font:500 11px var(--mono);color:var(--muted);padding-right:4px}
+
+/* 右下角悬浮胶囊（跟 App 里悬浮球同色） */
+.bubble{position:fixed;right:20px;bottom:80px;width:200px;height:72px;z-index:30;border-radius:16px;background:var(--bubble);
+  box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px rgba(255,255,255,.06);
+  opacity:0;transform:translateY(8px) scale(.96);transition:opacity .25s ease-out,transform .25s ease-out,background .3s ease;
+  pointer-events:none;overflow:hidden}
+.bubble.on{opacity:1;transform:none}
+.bubble.leaving{opacity:0;transform:translateY(6px);transition:opacity .22s ease-in,transform .22s ease-in,background .3s ease}
+.bubble.ok{background:var(--success)}
+.meta{position:absolute;left:14px;right:14px;top:9px;display:flex;justify-content:space-between;font-size:10.5px;color:rgba(255,255,255,.4);transition:opacity .2s}
+.meta .cd{font-family:var(--mono);color:rgba(255,255,255,.35)}
+.pitch{position:absolute;left:14px;right:14px;top:60px;height:1px;background:rgba(255,255,255,.08)}
+.prog{position:absolute;left:0;bottom:0;height:2px;background:var(--accent);width:100%;transition:opacity .2s}
+.msg{position:absolute;left:14px;top:21px;color:#fff;opacity:0;transform:translateY(4px);transition:opacity .2s ease-out .05s,transform .2s ease-out .05s}
+.msg b{display:block;font-size:14px;font-weight:700;line-height:1.35}
+.msg span{font-size:11px;color:rgba(255,255,255,.78)}
+.bubble.ok .meta,.bubble.ok .prog{opacity:0}
+.bubble.ok .msg{opacity:1;transform:none}
+
+#fx{position:fixed;inset:0;z-index:40;pointer-events:none}
+#hit{position:fixed;z-index:50;border:0;background:transparent;border-radius:50%;cursor:pointer;padding:0;display:none}
+#hit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.note{position:fixed;left:20px;bottom:84px;z-index:55;max-width:min(420px,calc(100% - 260px));background:var(--text);color:var(--bg);
+  font-size:12px;line-height:1.5;padding:8px 12px;border-radius:8px;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none}
+.note.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+<div class="win" id="win">
+  <div class="win-bar">
+    <span class="dot" style="background:#FF5F57"></span><span class="dot" style="background:#FEBC2E"></span><span class="dot" style="background:#28C840"></span>
+    <div class="win-title">阅读器 — 随手记下的好句子，最后都去哪了？</div>
+  </div>
+  <div class="doc">
+    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。右下角出现足球后<b>点它射门</b>；也可以按 <b>Enter</b> 直接射门、<b>Esc</b> 放弃。5 秒不理它，就按现在的逻辑自动丢弃。顶部可以切换「场地」和「目标」对比手感。</div>
+    <h1>随手记下的好句子，最后都去哪了？</h1>
+    <div class="by">示例文章 · 用来模拟你平时在看的网页</div>
+    <p>很多人都有这样的习惯：看到一句打动自己的话，顺手复制下来，想着"以后用得上"。可过了一周再回头找，它早就淹没在聊天记录、备忘录和几十个浏览器标签页里了。</p>
+    <p>问题不在于记得不够多，而在于"收下来"这一步太麻烦。每多一个步骤，就多一分放弃的理由。好的收集工具，应该让保存这件事轻得几乎感觉不到。</p>
+    <p>但"轻"不等于"无感"。如果保存完全没有反馈，你会怀疑自己到底存上没有；反馈太吵，又会打断思路。分寸感，是这类工具最难拿捏的地方。</p>
+    <p>有人把收集比作在海边捡贝壳：不必每一枚都捡，但捡起来的那一刻，最好能听到一声清脆的"咔哒"。那一下确认，会让人愿意继续捡下去。</p>
+    <p>试着选中这一段，按下复制，看看右下角会发生什么。</p>
+  </div>
+</div>
+<div class="dock" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+
+<div class="bar" id="bar" role="toolbar" aria-label="原型控制">
+  <span class="brand">足球模式 · 原型</span>
+  <div class="grp">场地<div class="seg" data-key="field">
+    <button data-v="corner" aria-pressed="true">角落小球场<small>推荐</small></button>
+    <button data-v="screen" aria-pressed="false">满屏射门</button>
+  </div></div>
+  <div class="grp">目标<div class="seg" data-key="target">
+    <button data-v="goal" aria-pressed="true">球门</button>
+    <button data-v="bin" aria-pressed="false">垃圾桶</button>
+  </div></div>
+  <label class="switch"><input type="checkbox" id="snd" checked>音效</label>
+  <button class="go" id="go">模拟一次复制</button>
+  <span class="score" id="score">今日 0 球</span>
+</div>
+
+<div class="bubble" id="bubble">
+  <div class="meta"><span>文本 · 阅读器</span><span class="cd" id="cd">5s</span></div>
+  <div class="pitch"></div>
+  <div class="msg"><b id="msgA">好球！已收藏</b><span id="msgB">今日第 1 球</span></div>
+  <div class="prog" id="prog"></div>
+</div>
+<canvas id="fx"></canvas>
+<button id="hit" aria-label="射门收藏"></button>
+<div class="note" id="note"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const bubble = $('#bubble'), cv = $('#fx'), g = cv.getContext('2d'), hit = $('#hit'), note = $('#note');
+const COUNTDOWN = 5;
+// 胶囊固定在右下角：距右 20、距底 80（给 Dock 留位置），尺寸 200×72
+const BOX = { w: 200, h: 72, right: 20, bottom: 80 };
+const S = { field: 'corner', target: 'goal', sound: true, goals: 0, timeScale: 1, session: null, warned: false };
+window.proto = S; // 调试：在控制台输入 proto.timeScale = 0.2 可以慢动作看
+
+// ── 控制栏 ─────────────────────────────────────────
+document.querySelectorAll('.seg').forEach((seg) => {
+  seg.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S[seg.dataset.key] = b.dataset.v;
+    seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    if (seg.dataset.key === 'field') S.warned = false;
+    endSession();
+  });
+});
+$('#snd').addEventListener('change', (e) => { S.sound = e.target.checked; });
+let pointer = { x: innerWidth / 2, y: innerHeight / 2 };
+addEventListener('pointermove', (e) => { pointer = { x: e.clientX, y: e.clientY }; }, { passive: true });
+$('#go').addEventListener('click', (e) => startCapture({ x: e.clientX || pointer.x, y: e.clientY || pointer.y }));
+document.addEventListener('copy', () => {
+  const sel = getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  const r = sel.getRangeAt(0).getBoundingClientRect();
+  startCapture({ x: r.right, y: r.bottom });
+});
+
+// ── 音效：全部用代码现场合成，不需要任何音频素材 ─────────────
+let AC = null, master = null, noiseBuf = null;
+function audio() {
+  if (!S.sound) return null;
+  try {
+    if (!AC) {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = AC.createDynamicsCompressor();
+      master = AC.createGain(); master.gain.value = 0.9;
+      master.connect(comp); comp.connect(AC.destination);
+      noiseBuf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  } catch { return null; }
+}
+function env(node, t, peak, attack, decay) {
+  node.gain.setValueAtTime(0.0001, t);
+  node.gain.exponentialRampToValueAtTime(peak, t + attack);
+  node.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+}
+function tone(type, f0, f1, t, peak, attack, decay) {
+  const o = AC.createOscillator(), gn = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t);
+  if (f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + attack + decay);
+  env(gn, t, peak, attack, decay); o.connect(gn).connect(master);
+  o.start(t); o.stop(t + attack + decay + 0.05);
+}
+function noise({ t, type, freq, freqTo, q, peak, attack, decay }) {
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  const f = AC.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(freq, t);
+  if (freqTo) f.frequency.exponentialRampToValueAtTime(freqTo, t + attack + decay);
+  const gn = AC.createGain(); env(gn, t, peak, attack, decay);
+  src.connect(f).connect(gn).connect(master);
+  src.start(t, Math.random() * 0.5); src.stop(t + attack + decay + 0.05);
+}
+const SFX = {
+  kick(power) { // 脚背抽球："嘭"的低频 + "啪"的皮面声
+    if (!audio()) return; const t = AC.currentTime;
+    tone('sine', 170, 46, t, 0.95 * power, 0.004, 0.16);
+    noise({ t, type: 'bandpass', freq: 1400, q: 0.8, peak: 0.5 * power, attack: 0.002, decay: 0.05 });
+  },
+  whoosh(dur) { // 球飞行的破风声
+    if (!audio()) return; const t = AC.currentTime + 0.02;
+    noise({ t, type: 'bandpass', freq: 380, freqTo: 1900, q: 1.4, peak: 0.16, attack: dur * 0.5, decay: dur * 0.5 });
+  },
+  net() { // 撞网："唰" + 闷响 + 收藏成功的"叮"
+    if (!audio()) return; const t = AC.currentTime;
+    noise({ t, type: 'highpass', freq: 2200, q: 0.7, peak: 0.42, attack: 0.012, decay: 0.3 });
+    tone('sine', 130, 62, t, 0.4, 0.004, 0.12);
+    SFX.chime(t + 0.1);
+  },
+  clang() { // 垃圾桶："哐当"
+    if (!audio()) return; const t = AC.currentTime;
+    [392, 871, 1433, 2090, 2877].forEach((f, i) => tone(i % 2 ? 'triangle' : 'sine', f, f * 0.995, t, 0.1 / (i + 1) + 0.025, 0.002, 0.35 + 0.1 * (4 - i)));
+    noise({ t, type: 'bandpass', freq: 3000, q: 1.2, peak: 0.3, attack: 0.002, decay: 0.12 });
+    SFX.chime(t + 0.14);
+  },
+  chime(t) { [[1046.5, 0], [1568, 0.09]].forEach(([f, d]) => tone('sine', f, f, t + d, 0.13, 0.008, 0.32)); },
+};
+
+// ── 画布与小工具 ───────────────────────────────────
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  $('#win').style.top = ($('#bar').offsetHeight + 26) + 'px';
+  const s = S.session;
+  if (s && (s.phase === 'appear' || s.phase === 'wait')) { layout(s); placeHit(s); }
+}
+addEventListener('resize', resize);
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const easeOutBounce = (t) => {
+  const n = 7.5625, d = 2.75;
+  if (t < 1 / d) return n * t * t;
+  if (t < 2 / d) return n * (t -= 1.5 / d) * t + 0.75;
+  if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + 0.9375;
+  return n * (t -= 2.625 / d) * t + 0.984375;
+};
+const bez = (p0, c, p2, u) => ({
+  x: (1 - u) * (1 - u) * p0.x + 2 * (1 - u) * u * c.x + u * u * p2.x,
+  y: (1 - u) * (1 - u) * p0.y + 2 * (1 - u) * u * c.y + u * u * p2.y,
+});
+
+// ── 足球贴图：一次画好，之后缩放使用（不用 emoji，符合 DESIGN.md） ──
+const BALL = (() => {
+  const R = 64, c = document.createElement('canvas'); c.width = c.height = R * 2 + 4;
+  const x = c.getContext('2d'); x.translate(R + 2, R + 2);
+  const vtx = (cx, cy, rr, rot, i) => { const a = rot + i * Math.PI * 2 / 5; return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
+  const pent = (cx, cy, rr, rot) => { x.beginPath(); for (let i = 0; i < 5; i++) x.lineTo(...vtx(cx, cy, rr, rot, i)); x.closePath(); x.fill(); };
+  x.beginPath(); x.arc(0, 0, R, 0, Math.PI * 2); x.fillStyle = '#FAFAF8'; x.fill();
+  x.save(); x.clip();
+  x.fillStyle = '#1C1917'; x.strokeStyle = '#1C1917'; x.lineWidth = R * 0.05; x.lineCap = 'round';
+  const pr = R * 0.3, outer = [];
+  pent(0, 0, pr, -Math.PI / 2);
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + i * Math.PI * 2 / 5, o = { cx: Math.cos(a) * R * 0.95, cy: Math.sin(a) * R * 0.95, rot: a + Math.PI };
+    pent(o.cx, o.cy, pr, o.rot); outer.push(o);
+    const [sx, sy] = vtx(0, 0, pr, -Math.PI / 2, i), [ex, ey] = vtx(o.cx, o.cy, pr, o.rot, 0);
+    x.beginPath(); x.moveTo(sx, sy); x.lineTo(ex, ey); x.stroke();
+  }
+  const near = (P, Q) => [1, 4].map((k) => vtx(P.cx, P.cy, pr, P.rot, k))
+    .sort((m, n) => Math.hypot(m[0] - Q.cx, m[1] - Q.cy) - Math.hypot(n[0] - Q.cx, n[1] - Q.cy))[0];
+  for (let i = 0; i < 5; i++) {
+    const A = outer[i], B = outer[(i + 1) % 5], [ax, ay] = near(A, B), [bx, by] = near(B, A);
+    x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.stroke();
+  }
+  const sh = x.createRadialGradient(-R * 0.35, -R * 0.4, R * 0.08, 0, 0, R * 1.05);
+  sh.addColorStop(0, 'rgba(255,255,255,0.35)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(28,25,23,0.38)');
+  x.fillStyle = sh; x.fillRect(-R, -R, R * 2, R * 2);
+  x.restore();
+  x.beginPath(); x.arc(0, 0, R - 1, 0, Math.PI * 2); x.strokeStyle = 'rgba(28,25,23,0.5)'; x.lineWidth = 2; x.stroke();
+  return c;
+})();
+function drawBall(b) {
+  if (b.a <= 0.01 || b.r <= 0.3) return;
+  const k = b.r * 1.03125;
+  g.save(); g.globalAlpha *= b.a; g.translate(b.x, b.y); g.scale(b.sx, b.sy); g.rotate(b.rot);
+  g.drawImage(BALL, -k, -k, k * 2, k * 2);
+  g.restore();
+}
+function drawShadow(x, groundY, r, lift, alpha) { // lift: 0 贴地 → 1 高高飞起
+  g.save(); g.globalAlpha *= alpha * (1 - 0.7 * lift) * 0.45; g.fillStyle = '#000';
+  g.beginPath(); g.ellipse(x, groundY, r * (0.9 - 0.4 * lift), r * 0.22, 0, 0, Math.PI * 2); g.fill(); g.restore();
+}
+
+// ── 球门（侧面看：左边是门柱，网往右边伸，被球撞到时后网会鼓起来） ──
+function goalPt(G, u, v, bulge) {
+  const vv = clamp(v, 0, 1);
+  return {
+    x: G.m + u * (G.D + 4 * vv) + bulge * G.bulgePx * Math.pow(u, 1.4) * Math.sin(Math.PI * vv),
+    y: lerp(G.yT + 5 * u, G.yG, vv),
+  };
+}
+function polyline(pts) { g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y))); g.stroke(); }
+function drawGoal(G, bulge, ox) {
+  const N = 10, seq = (fn) => Array.from({ length: N + 1 }, (_, i) => fn(i / N));
+  g.save(); g.translate(ox, 0); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.strokeStyle = 'rgba(250,250,248,0.28)'; g.lineWidth = 1;
+  for (const u of [0.2, 0.4, 0.6, 0.8]) polyline(seq((v) => goalPt(G, u, v, bulge)));
+  for (const v of [0.2, 0.4, 0.6, 0.8]) polyline(seq((u) => goalPt(G, u, v, bulge)));
+  g.strokeStyle = 'rgba(250,250,248,0.55)'; g.lineWidth = 1.2;
+  polyline(seq((v) => goalPt(G, 1, v, bulge)));
+  polyline(seq((u) => goalPt(G, u, 1, bulge)));
+  g.strokeStyle = '#FAFAF8'; g.lineWidth = 2.2;
+  polyline(seq((u) => goalPt(G, u, 0, bulge)));
+  g.lineWidth = 3; polyline([goalPt(G, 0, 0, 0), goalPt(G, 0, 1, 0)]);
+  g.restore();
+}
+
+// ── 垃圾桶（你原来设想的版本，用来对比） ──
+function withBin(B, wob, ox, fn) {
+  g.save(); g.translate(B.cx + ox, B.top + B.h); g.rotate(wob); g.translate(-B.cx, -(B.top + B.h)); fn(); g.restore();
+}
+function drawBinBack(B, wob, ox) {
+  withBin(B, wob, ox, () => { g.fillStyle = '#44403C'; g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, 0, Math.PI * 2); g.fill(); });
+}
+function drawBinFront(B, wob, ox) {
+  withBin(B, wob, ox, () => {
+    const l0 = B.cx - B.wTop / 2, r0 = B.cx + B.wTop / 2, l1 = B.cx - B.wBot / 2, r1 = B.cx + B.wBot / 2, bot = B.top + B.h;
+    g.fillStyle = '#D6D3D1';
+    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, Math.PI, 0, true); g.lineTo(r1, bot); g.lineTo(l1, bot); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(87,83,78,0.55)'; g.lineWidth = 1;
+    for (const f of [0.25, 0.5, 0.75]) { g.beginPath(); g.moveTo(lerp(l0, r0, f), B.top + 6); g.lineTo(lerp(l1, r1, f), bot - 3); g.stroke(); }
+    g.strokeStyle = '#F5F5F0'; g.lineWidth = 2;
+    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, 0, Math.PI); g.stroke();
+  });
+}
+
+// ── 粒子、冲击圈、瞄准虚线 ──
+const parts = [], rings = [];
+function burst(x, y, n, dir, colors, spread = 1) {
+  for (let i = 0; i < n; i++) parts.push({
+    x, y, life: 0, max: 0.45 + Math.random() * 0.35, s: 1.6 + Math.random() * 2, c: colors[i % colors.length],
+    vx: (dir * (60 + Math.random() * 220) + (Math.random() - 0.5) * 80) * spread, vy: -(80 + Math.random() * 260) * spread,
+    rot: Math.random() * 6, vr: (Math.random() - 0.5) * 20,
+  });
+}
+function ring(x, y, r0, color) { rings.push({ x, y, r0, color, t: 0 }); }
+function stepFx(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]; p.life += dt;
+    if (p.life >= p.max) { parts.splice(i, 1); continue; }
+    p.vy += 900 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt;
+  }
+  for (let i = rings.length - 1; i >= 0; i--) { rings[i].t += dt; if (rings[i].t > 0.22) rings.splice(i, 1); }
+}
+function drawFx() {
+  for (const q of rings) {
+    const k = q.t / 0.22;
+    g.save(); g.globalAlpha = (1 - k) * 0.85; g.strokeStyle = q.color; g.lineWidth = 2.5 * (1 - k) + 0.5;
+    g.beginPath(); g.arc(q.x, q.y, q.r0 * (1 + 1.3 * k), 0, Math.PI * 2); g.stroke(); g.restore();
+  }
+  for (const p of parts) {
+    g.save(); g.globalAlpha = 1 - p.life / p.max; g.translate(p.x, p.y); g.rotate(p.rot);
+    g.fillStyle = p.c; g.fillRect(-p.s, -p.s * 0.6, p.s * 2, p.s * 1.2); g.restore();
+  }
+}
+function drawAim(s, a) { // 鼠标悬停在球上时，显示一条虚线告诉你"点一下会往哪飞"
+  if (a <= 0.01) return;
+  const { p0, c, p2 } = s.path;
+  g.save(); g.globalAlpha = a; g.fillStyle = S.field === 'corner' ? 'rgba(255,255,255,0.45)' : 'rgba(249,115,22,0.75)';
+  let prev = p0, acc = 0;
+  for (let i = 1; i <= 90; i++) {
+    const u = i / 90, p = bez(p0, c, p2, u);
+    acc += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
+    if (u > 0.12 && u < 0.94 && acc >= 7) { acc = 0; g.beginPath(); g.arc(p.x, p.y, 1.4, 0, Math.PI * 2); g.fill(); }
+  }
+  g.restore();
+}
+
+// ── 布局：胶囊、球门/垃圾桶、球的起点、飞行路线 ──
+function layout(s) {
+  const L = W - BOX.right - BOX.w, T = H - BOX.bottom - BOX.h, ground = T + 60;
+  s.ground = ground;
+  s.goal = { m: L + 132, yT: ground - 32, yG: ground, D: 40, bulgePx: 13 };
+  s.bin = { cx: L + 158, top: ground - 32, h: 32, wTop: 30, wBot: 22 };
+  if (S.field === 'corner') {
+    s.r0 = 12; s.rEnd = 10.5; s.rest = { x: L + 36, y: ground - 12 };
+  } else {
+    s.r0 = 18; s.rEnd = 10.5;
+    let x = clamp(s.anchor.x + 26, 40, W - 40), y = clamp(s.anchor.y + 24, 90, H - 40);
+    if (x > L - 50 && y > T - 50) { x = L - 60; y = Math.min(y, T - 30); } // 别和角落胶囊叠在一起
+    s.rest = { x, y };
+  }
+  const p0 = { ...s.rest }, k = s.rand;
+  if (S.target === 'goal') {
+    const G = s.goal, p2 = { x: G.m + 5, y: lerp(G.yT, G.yG, 0.5 + (k - 0.5) * 0.2) };
+    const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
+    const arc = S.field === 'corner' ? 12 + k * 10 : clamp(dist * 0.22, 50, 200) * (0.85 + k * 0.3);
+    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.5), y: Math.min(p0.y, p2.y) - arc },
+      dur: S.field === 'corner' ? 0.34 : clamp(dist / 1500 + 0.22, 0.42, 0.8) };
+  } else {
+    const B = s.bin, p2 = { x: B.cx, y: B.top - 3 };
+    const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
+    const arc = S.field === 'corner' ? 56 + k * 12 : clamp(dist * 0.4, 110, 320);
+    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.62), y: Math.min(p0.y, p2.y) - arc },
+      dur: S.field === 'corner' ? 0.6 : clamp(dist / 1300 + 0.35, 0.6, 1.0) };
+  }
+}
+
+// ── 一次"复制 → 出球 → 射门/超时"的完整流程 ─────────────
+const CHEERS = { goal: ['好球！', '漂亮！', '进了！', '世界波！'], bin: ['哐当！', '进桶了！'] };
+const BUSY = ['kick', 'fly', 'net', 'scored', 'leave'];
+
+function startCapture(anchor) {
+  const cur = S.session;
+  if (cur && BUSY.includes(cur.phase)) return; // 正在进球动画里，先不打断
+  audio(); // 借这次用户操作把声音"解锁"（浏览器要求先有用户操作才能出声）
+  const s = { phase: 'appear', t: 0, anchor, rand: Math.random(), remaining: COUNTDOWN, hover: false, hoverA: 0,
+    trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0, fade: 1, shake: 0, lastSecond: false };
+  S.session = s; layout(s);
+  s.ball = { x: s.rest.x, y: s.rest.y, r: s.r0, rot: 0, sx: 1, sy: 1, a: 1, vx: 0, vy: 0 };
+  bubble.classList.remove('ok', 'leaving'); void bubble.offsetWidth; bubble.classList.add('on');
+  updateCountdownUI(s); placeHit(s); hideNote();
+  if (S.field === 'screen' && !S.warned) {
+    S.warned = true;
+    showNote('满屏模式：球会出现在你鼠标旁边。留意一下它有没有挡住你正在看的字、正要点的按钮。');
+  }
+}
+function placeHit(s) {
+  const r = s.r0 * 1.5;
+  Object.assign(hit.style, { left: s.rest.x - r + 'px', top: s.rest.y - r + 'px', width: r * 2 + 'px', height: r * 2 + 'px', display: 'block' });
+}
+function kick() {
+  const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
+  s.lastSecond = s.remaining <= 1.05;
+  s.phase = 'kick'; s.t = 0; hit.style.display = 'none';
+  Object.assign(s.ball, { x: s.rest.x, y: s.rest.y, r: s.r0, a: 1 });
+  SFX.kick(S.field === 'corner' ? 0.8 : 1);
+  ring(s.ball.x, s.ball.y, s.r0, S.field === 'corner' ? '#FFFFFF' : '#F97316');
+}
+function score(s) {
+  if (s.phase !== 'net') return;
+  s.phase = 'scored'; s.t = 0; s.shake = 0.22;
+  S.goals++; $('#score').textContent = `今日 ${S.goals} 球`;
+  if (S.target === 'goal') SFX.net(); else SFX.clang();
+  const list = CHEERS[S.target];
+  $('#msgA').textContent = (s.lastSecond && S.target === 'goal' ? '绝杀！' : list[Math.floor(Math.random() * list.length)]) + '已收藏';
+  $('#msgB').textContent = `今日第 ${S.goals} 球`;
+  setTimeout(() => { if (S.session === s) bubble.classList.add('ok'); }, 90);
+}
+function expire(reason) {
+  const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
+  s.phase = 'expire'; s.t = 0; s.ball.vx = -150; hit.style.display = 'none';
+  bubble.classList.add('leaving');
+  showNote(reason === 'esc' ? '按了 Esc：这次不收藏。' : '5 秒没踢：按现在的逻辑自动丢弃，不收藏。');
+}
+function endSession() {
+  S.session = null; hit.style.display = 'none';
+  bubble.classList.remove('on', 'ok', 'leaving'); bubble.style.translate = '';
+}
+function updateCountdownUI(s) {
+  $('#cd').textContent = Math.max(0, Math.ceil(s.remaining)) + 's';
+  $('#prog').style.width = clamp(s.remaining / COUNTDOWN, 0, 1) * 100 + '%';
+}
+let noteTimer = 0;
+function showNote(text) { note.textContent = text; note.classList.add('on'); clearTimeout(noteTimer); noteTimer = setTimeout(hideNote, 3200); }
+function hideNote() { note.classList.remove('on'); }
+
+// 球进网后的小物理：撞后网 → 网鼓起 → 球落地弹两下
+function hitNet(s, x, y) {
+  s.bulgeV += 15 + Math.min(10, Math.max(0, s.ball.vx) / 60);
+  score(s);
+  burst(x, y, S.field === 'corner' ? 12 : 18, 1, ['#F97316', '#FDBA74', '#FAFAF8']);
+}
+function stepGoalBall(s, dt) {
+  const b = s.ball, G = s.goal;
+  if (s.phase === 'net') { // 还没撞到后网：球是直直钻进去的，先不算重力
+    b.x += b.vx * dt; b.y = Math.min(b.y + b.vy * 0.3 * dt, G.yG - b.r);
+  } else {
+    b.vy += 1500 * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+  }
+  b.rot += (b.vx / b.r) * dt;
+  const v = clamp((b.y - G.yT) / (G.yG - G.yT), 0, 1);
+  const back = goalPt(G, 1, v, s.bulge).x - b.r * 0.85;
+  if (b.x > back) {
+    if (s.phase === 'net') hitNet(s, back + b.r, b.y);
+    b.x = back; b.vx = Math.min(b.vx, 0) * 0.3 - 25;
+  }
+  if (b.y + b.r > G.yG) { // 落地弹一下，然后滚着停住
+    b.y = G.yG - b.r;
+    b.vy = b.vy > 60 ? -b.vy * 0.32 : 0;
+    b.vx *= Math.pow(0.15, dt);
+  }
+  if (s.phase !== 'net' && b.x - b.r < G.m + 2) { b.x = G.m + 2 + b.r; b.vx = Math.abs(b.vx) * 0.3; } // 进球后别滚出门外
+}
+// 垃圾桶版：球从上面掉进桶里 → 桶晃一晃
+function stepBinBall(s, dt) {
+  const b = s.ball, B = s.bin;
+  b.vy += 1800 * dt; b.vx *= Math.pow(0.02, dt); b.x += b.vx * dt * 0.4; b.y += b.vy * dt; b.rot += 6 * dt;
+  b.x = clamp(b.x, B.cx - B.wTop / 2 + b.r * 0.6, B.cx + B.wTop / 2 - b.r * 0.6);
+  if (s.phase === 'net' && b.y > B.top + 8) {
+    s.wobV += 5.5; score(s);
+    burst(B.cx, B.top, 8, 1, ['#D6D3D1', '#FAFAF8', '#A8A29E'], 0.7);
+    burst(B.cx, B.top, 6, -1, ['#D6D3D1', '#FAFAF8'], 0.6);
+  }
+  const floor = B.top + B.h - 3 - b.r;
+  if (b.y > floor) { b.y = floor; b.vy = 0; }
+}
+
+function update(dt) {
+  stepFx(dt);
+  const s = S.session; if (!s) return;
+  s.t += dt;
+  s.bulgeV += (-230 * s.bulge - 9 * s.bulgeV) * dt; s.bulge += s.bulgeV * dt; // 球网弹簧
+  s.wobV += (-260 * s.wob - 7 * s.wobV) * dt; s.wob += s.wobV * dt;           // 垃圾桶弹簧
+  s.shake = Math.max(0, s.shake - dt);
+  s.hoverA = lerp(s.hoverA, s.hover && s.phase === 'wait' ? 1 : 0, 1 - Math.exp(-dt * 14));
+  const b = s.ball;
+  if (s.phase === 'appear' || s.phase === 'wait') {
+    s.remaining -= dt; updateCountdownUI(s);
+    if (s.remaining <= 0) { expire('timeout'); return; }
+  }
+  switch (s.phase) {
+    case 'appear': {
+      const k = clamp(s.t / (S.field === 'corner' ? 0.42 : 0.32), 0, 1);
+      if (S.field === 'corner') { b.y = s.rest.y - 34 * (1 - easeOutBounce(k)); b.a = clamp(k * 3, 0, 1); }
+      else { b.r = s.r0 * Math.max(0.001, easeOutBack(k)); }
+      if (k >= 1) { s.phase = 'wait'; s.t = 0; }
+      break;
+    }
+    case 'wait':
+      b.r = s.r0 * (1 + 0.07 * s.hoverA); b.y = s.rest.y; b.a = 1;
+      break;
+    case 'kick': { // 触球瞬间：球被踢扁一下
+      const k = clamp(s.t / 0.07, 0, 1), q = Math.sin(Math.PI * k);
+      b.sx = 1 + 0.26 * q; b.sy = 1 - 0.2 * q;
+      if (k >= 1) { s.phase = 'fly'; s.t = 0; b.sx = b.sy = 1; SFX.whoosh(s.path.dur); }
+      break;
+    }
+    case 'fly': {
+      const { p0, c, p2, dur } = s.path, t = clamp(s.t / dur, 0, 1);
+      const u = S.target === 'goal' ? 0.5 * t + 0.5 * (1 - (1 - t) * (1 - t)) : t;
+      const p = bez(p0, c, p2, u);
+      s.trail.push({ x: b.x, y: b.y, r: b.r }); if (s.trail.length > 7) s.trail.shift();
+      b.x = p.x; b.y = p.y; b.r = lerp(s.r0, s.rEnd, u); b.rot += dt * (S.target === 'goal' ? 22 : 13);
+      const st = 1 + 0.12 * Math.sin(Math.PI * Math.min(1, t * 2.5));
+      b.sx = st; b.sy = 1 / st;
+      if (t >= 1) {
+        const du = S.target === 'goal' ? 0.5 : 1;
+        b.vx = 2 * (p2.x - c.x) / dur * du; b.vy = 2 * (p2.y - c.y) / dur * du;
+        if (S.target === 'goal') b.vx = Math.max(b.vx, 280);
+        s.phase = 'net'; s.t = 0; b.sx = b.sy = 1;
+      }
+      break;
+    }
+    case 'net': case 'scored': case 'leave':
+      if (s.trail.length) s.trail.shift();
+      if (S.target === 'goal') stepGoalBall(s, dt); else stepBinBall(s, dt);
+      if (s.phase === 'net' && s.t > 0.5) { // 保险：无论如何都算进
+        if (S.target === 'goal') hitNet(s, b.x + b.r, b.y); else score(s);
+      }
+      if (s.phase === 'scored' && s.t > 1.25) { s.phase = 'leave'; s.t = 0; bubble.classList.add('leaving'); }
+      if (s.phase === 'leave') { s.fade = 1 - clamp(s.t / 0.22, 0, 1); if (s.t > 0.25) endSession(); }
+      break;
+    case 'expire':
+      if (S.field === 'corner') { b.x += b.vx * dt; b.rot += (b.vx / b.r) * dt; b.a = 1 - clamp(s.t / 0.45, 0, 1); }
+      else { b.r = s.r0 * (1 - clamp(s.t / 0.25, 0, 1)); }
+      s.fade = 1 - clamp((s.t - 0.1) / 0.3, 0, 1);
+      if (s.t > 0.45) endSession();
+      break;
+  }
+}
+
+function render() {
+  g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
+  const s = S.session;
+  if (s) {
+    const ox = s.shake > 0 ? Math.sin(s.shake * 90) * 3 * (s.shake / 0.22) : 0;
+    bubble.style.translate = ox ? `${ox.toFixed(2)}px 0` : '';
+    const b = s.ball;
+    g.save(); g.globalAlpha = s.fade * (s.phase === 'appear' ? clamp(s.t / 0.25, 0, 1) : 1);
+    if (S.target === 'bin') drawBinBack(s.bin, s.wob, ox);
+    if (S.field === 'corner' && ['appear', 'wait', 'kick', 'fly', 'expire'].includes(s.phase)) {
+      drawShadow(b.x, s.ground, s.r0, clamp((s.ground - b.y - b.r) / 50, 0, 1), b.a);
+    } else if (S.field === 'screen' && ['appear', 'wait', 'kick'].includes(s.phase)) {
+      drawShadow(b.x, s.rest.y + s.r0 + 3, b.r, 0, b.a);
+    }
+    s.trail.forEach((p, i) => {
+      const k = (i + 1) / s.trail.length;
+      g.save(); g.globalAlpha *= 0.22 * k; g.fillStyle = S.field === 'corner' ? '#FAFAF8' : '#F97316';
+      g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + 0.5 * k), 0, Math.PI * 2); g.fill(); g.restore();
+    });
+    drawAim(s, s.hoverA);
+    drawBall(b);
+    if (S.target === 'goal') drawGoal(s.goal, s.bulge, ox); else drawBinFront(s.bin, s.wob, ox);
+    g.restore();
+  }
+  drawFx();
+}
+
+// ── 输入 ──
+hit.addEventListener('click', () => kick());
+hit.addEventListener('pointerenter', () => { if (S.session) S.session.hover = true; });
+hit.addEventListener('pointerleave', () => { if (S.session) S.session.hover = false; });
+addEventListener('keydown', (e) => {
+  const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
+  if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); kick(); }
+  else if (e.key === 'Escape') { e.preventDefault(); expire('esc'); }
+}, true);
+
+resize();
+let last = performance.now();
+requestAnimationFrame(function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000) * S.timeScale; last = now;
+  update(dt); render();
+  requestAnimationFrame(loop);
+});
+</script>
+</body>
+</html>
