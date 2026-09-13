@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>OpenWiki 足球模式 · 原型</title>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root{
   --accent:#F97316; --accent-hover:#EA580C; --accent-soft:#FFF7ED;
@@ -41,11 +41,11 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
   gap:10px;width:max-content;max-width:calc(100% - 24px);padding:8px 10px;background:var(--surface);border:1px solid var(--border);
   border-radius:12px;box-shadow:0 6px 24px rgba(28,25,23,.1)}
 .brand{font-size:13px;font-weight:700;padding:0 4px}
-.grp{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+.grp{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);transition:opacity .15s}
+.grp.off{opacity:.4;pointer-events:none}
 .seg{display:flex;background:var(--raised);border:1px solid var(--border);border-radius:8px;padding:2px}
 .seg button{border:0;background:transparent;font:500 12px var(--font);color:var(--text2);padding:5px 10px;border-radius:6px;cursor:pointer;white-space:nowrap}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(28,25,23,.12)}
-.seg small{color:var(--accent);font-size:10px;margin-left:3px;font-weight:600}
 .switch{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;user-select:none}
 .switch input{appearance:none;-webkit-appearance:none;width:30px;height:18px;border-radius:9px;background:var(--border);position:relative;cursor:pointer;margin:0;transition:background .15s}
 .switch input::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}
@@ -55,7 +55,7 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
 .go:hover{background:var(--accent-hover)}
 .score{font:500 11px var(--mono);color:var(--muted);padding-right:4px}
 
-/* 右下角悬浮胶囊（跟 App 里悬浮球同色） */
+/* 角落模式：右下角悬浮胶囊（跟 App 里悬浮球同色） */
 .bubble{position:fixed;right:20px;bottom:80px;width:200px;height:72px;z-index:30;border-radius:16px;background:var(--bubble);
   box-shadow:0 8px 32px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px rgba(255,255,255,.06);
   opacity:0;transform:translateY(8px) scale(.96);transition:opacity .25s ease-out,transform .25s ease-out,background .3s ease;
@@ -73,6 +73,18 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
 .bubble.ok .meta,.bubble.ok .prog{opacity:0}
 .bubble.ok .msg{opacity:1;transform:none}
 
+/* 满屏模式：进球后在球门上方弹出的字 */
+.pop-anchor{position:fixed;z-index:45;transform:translate(-50%,-100%);pointer-events:none}
+.pop{display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0}
+.pop b{display:block;font-weight:800;font-size:32px;line-height:1.1;color:var(--accent);transform:rotate(-4deg);white-space:nowrap;
+  text-shadow:2px 0 0 #fff,-2px 0 0 #fff,0 2px 0 #fff,0 -2px 0 #fff,1.5px 1.5px 0 #fff,-1.5px -1.5px 0 #fff,1.5px -1.5px 0 #fff,-1.5px 1.5px 0 #fff,0 8px 20px rgba(28,25,23,.3)}
+.pop span{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:#fff;background:var(--success);padding:5px 11px 5px 8px;border-radius:999px;box-shadow:0 4px 14px rgba(22,163,74,.35);white-space:nowrap}
+.pop em{font-style:normal}
+.pop.show{animation:popIn .5s ease-out forwards}
+.pop.hide{animation:popOut .26s ease-in forwards}
+@keyframes popIn{0%{opacity:0;transform:translateY(14px) scale(.4)}50%{opacity:1;transform:translateY(-6px) scale(1.14)}75%{opacity:1;transform:translateY(1px) scale(.97)}100%{opacity:1;transform:none}}
+@keyframes popOut{from{opacity:1;transform:none}to{opacity:0;transform:translateY(-16px) scale(.95)}}
+
 #fx{position:fixed;inset:0;z-index:40;pointer-events:none}
 #hit{position:fixed;z-index:50;border:0;background:transparent;border-radius:50%;cursor:pointer;padding:0;display:none}
 #hit:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -88,14 +100,14 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
     <div class="win-title">阅读器 — 随手记下的好句子，最后都去哪了？</div>
   </div>
   <div class="doc">
-    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。右下角出现足球后<b>点它射门</b>；也可以按 <b>Enter</b> 直接射门、<b>Esc</b> 放弃。5 秒不理它，就按现在的逻辑自动丢弃。顶部可以切换「场地」和「目标」对比手感。</div>
+    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球，<b>点它射门</b>；也可以按 <b>Enter</b> 直接射门、<b>Esc</b> 放弃。5 秒不理它，就按现在的逻辑自动丢弃。顶部可以调球门「大小」，也可以换回「角落小球场」对比。</div>
     <h1>随手记下的好句子，最后都去哪了？</h1>
     <div class="by">示例文章 · 用来模拟你平时在看的网页</div>
     <p>很多人都有这样的习惯：看到一句打动自己的话，顺手复制下来，想着"以后用得上"。可过了一周再回头找，它早就淹没在聊天记录、备忘录和几十个浏览器标签页里了。</p>
     <p>问题不在于记得不够多，而在于"收下来"这一步太麻烦。每多一个步骤，就多一分放弃的理由。好的收集工具，应该让保存这件事轻得几乎感觉不到。</p>
     <p>但"轻"不等于"无感"。如果保存完全没有反馈，你会怀疑自己到底存上没有；反馈太吵，又会打断思路。分寸感，是这类工具最难拿捏的地方。</p>
     <p>有人把收集比作在海边捡贝壳：不必每一枚都捡，但捡起来的那一刻，最好能听到一声清脆的"咔哒"。那一下确认，会让人愿意继续捡下去。</p>
-    <p>试着选中这一段，按下复制，看看右下角会发生什么。</p>
+    <p>试着选中这一段，按下复制，看看会发生什么。</p>
   </div>
 </div>
 <div class="dock" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
@@ -103,12 +115,17 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
 <div class="bar" id="bar" role="toolbar" aria-label="原型控制">
   <span class="brand">足球模式 · 原型</span>
   <div class="grp">场地<div class="seg" data-key="field">
-    <button data-v="corner" aria-pressed="true">角落小球场<small>推荐</small></button>
-    <button data-v="screen" aria-pressed="false">满屏射门</button>
+    <button data-v="screen" aria-pressed="true">满屏射门</button>
+    <button data-v="corner" aria-pressed="false">角落小球场</button>
   </div></div>
   <div class="grp">目标<div class="seg" data-key="target">
     <button data-v="goal" aria-pressed="true">球门</button>
     <button data-v="bin" aria-pressed="false">垃圾桶</button>
+  </div></div>
+  <div class="grp" id="sizeGrp">大小<div class="seg" data-key="size">
+    <button data-v="0.8" aria-pressed="false">中</button>
+    <button data-v="1" aria-pressed="true">大</button>
+    <button data-v="1.25" aria-pressed="false">特大</button>
   </div></div>
   <label class="switch"><input type="checkbox" id="snd" checked>音效</label>
   <button class="go" id="go">模拟一次复制</button>
@@ -122,25 +139,33 @@ body{font-family:var(--font);color:var(--text);background:#DAD6CF}
   <div class="prog" id="prog"></div>
 </div>
 <canvas id="fx"></canvas>
+<div class="pop-anchor" id="popAnchor"><div class="pop" id="pop">
+  <b id="popA">好球！</b>
+  <span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><em id="popB">已收藏 · 今日第 1 球</em></span>
+</div></div>
 <button id="hit" aria-label="射门收藏"></button>
 <div class="note" id="note"></div>
 
 <script>
 const $ = (s) => document.querySelector(s);
 const bubble = $('#bubble'), cv = $('#fx'), g = cv.getContext('2d'), hit = $('#hit'), note = $('#note');
+const popAnchor = $('#popAnchor'), pop = $('#pop');
 const COUNTDOWN = 5;
-// 胶囊固定在右下角：距右 20、距底 80（给 Dock 留位置），尺寸 200×72
+// 角落模式的胶囊：距右 20、距底 80（给 Dock 留位置），尺寸 200×72
 const BOX = { w: 200, h: 72, right: 20, bottom: 80 };
-const S = { field: 'corner', target: 'goal', sound: true, goals: 0, timeScale: 1, session: null, warned: false };
+// 满屏模式：右下角不再有黑色底板，只放一个大球门（"大"档 170×104）
+const BIG = { w: 170, h: 104, right: 28, bottom: 88 };
+const S = { field: 'screen', target: 'goal', size: 1, sound: true, goals: 0, timeScale: 1, freeze: 0, session: null };
 window.proto = S; // 调试：在控制台输入 proto.timeScale = 0.2 可以慢动作看
 
 // ── 控制栏 ─────────────────────────────────────────
 document.querySelectorAll('.seg').forEach((seg) => {
   seg.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    S[seg.dataset.key] = b.dataset.v;
+    const key = seg.dataset.key;
+    S[key] = key === 'size' ? Number(b.dataset.v) : b.dataset.v;
     seg.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-    if (seg.dataset.key === 'field') S.warned = false;
+    $('#sizeGrp').classList.toggle('off', S.field === 'corner');
     endSession();
   });
 });
@@ -203,11 +228,18 @@ const SFX = {
     if (!audio()) return; const t = AC.currentTime + 0.02;
     noise({ t, type: 'bandpass', freq: 380, freqTo: 1900, q: 1.4, peak: 0.16, attack: dur * 0.5, decay: dur * 0.5 });
   },
-  net() { // 撞网："唰" + 闷响 + 收藏成功的"叮"
+  net() { // 角落模式撞网："唰" + 闷响 + 收藏成功的"叮"
     if (!audio()) return; const t = AC.currentTime;
     noise({ t, type: 'highpass', freq: 2200, q: 0.7, peak: 0.42, attack: 0.012, decay: 0.3 });
     tone('sine', 130, 62, t, 0.4, 0.004, 0.12);
     SFX.chime(t + 0.1);
+  },
+  goalBig() { // 满屏模式进球：更响更长的"唰" + 低沉的"咚" + "叮"
+    if (!audio()) return; const t = AC.currentTime;
+    noise({ t, type: 'highpass', freq: 1700, q: 0.7, peak: 0.55, attack: 0.01, decay: 0.45 });
+    noise({ t, type: 'bandpass', freq: 600, q: 0.9, peak: 0.28, attack: 0.004, decay: 0.18 });
+    tone('sine', 110, 38, t, 0.8, 0.004, 0.3);
+    SFX.chime(t + 0.12);
   },
   clang() { // 垃圾桶："哐当"
     if (!audio()) return; const t = AC.currentTime;
@@ -232,6 +264,7 @@ addEventListener('resize', resize);
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
+const Q = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
 const easeOutBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
 const easeOutBounce = (t) => {
   const n = 7.5625, d = 2.75;
@@ -262,8 +295,8 @@ const BALL = (() => {
     const [sx, sy] = vtx(0, 0, pr, -Math.PI / 2, i), [ex, ey] = vtx(o.cx, o.cy, pr, o.rot, 0);
     x.beginPath(); x.moveTo(sx, sy); x.lineTo(ex, ey); x.stroke();
   }
-  const near = (P, Q) => [1, 4].map((k) => vtx(P.cx, P.cy, pr, P.rot, k))
-    .sort((m, n) => Math.hypot(m[0] - Q.cx, m[1] - Q.cy) - Math.hypot(n[0] - Q.cx, n[1] - Q.cy))[0];
+  const near = (P, Q2) => [1, 4].map((k) => vtx(P.cx, P.cy, pr, P.rot, k))
+    .sort((m, n) => Math.hypot(m[0] - Q2.cx, m[1] - Q2.cy) - Math.hypot(n[0] - Q2.cx, n[1] - Q2.cy))[0];
   for (let i = 0; i < 5; i++) {
     const A = outer[i], B = outer[(i + 1) % 5], [ax, ay] = near(A, B), [bx, by] = near(B, A);
     x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.stroke();
@@ -275,10 +308,11 @@ const BALL = (() => {
   x.beginPath(); x.arc(0, 0, R - 1, 0, Math.PI * 2); x.strokeStyle = 'rgba(28,25,23,0.5)'; x.lineWidth = 2; x.stroke();
   return c;
 })();
-function drawBall(b) {
+function drawBall(b) { // 挤压/拉伸沿着飞行方向，旋转只转花纹
   if (b.a <= 0.01 || b.r <= 0.3) return;
-  const k = b.r * 1.03125;
-  g.save(); g.globalAlpha *= b.a; g.translate(b.x, b.y); g.scale(b.sx, b.sy); g.rotate(b.rot);
+  const k = b.r * 1.03125, d = b.dir || 0;
+  g.save(); g.globalAlpha *= b.a; g.translate(b.x, b.y);
+  g.rotate(d); g.scale(b.sx, b.sy); g.rotate(-d + b.rot);
   g.drawImage(BALL, -k, -k, k * 2, k * 2);
   g.restore();
 }
@@ -287,7 +321,7 @@ function drawShadow(x, groundY, r, lift, alpha) { // lift: 0 贴地 → 1 高高
   g.beginPath(); g.ellipse(x, groundY, r * (0.9 - 0.4 * lift), r * 0.22, 0, 0, Math.PI * 2); g.fill(); g.restore();
 }
 
-// ── 球门（侧面看：左边是门柱，网往右边伸，被球撞到时后网会鼓起来） ──
+// ── 角落模式的小球门（侧面看：左边是门柱，网往右边伸，被球撞到时后网会鼓起来） ──
 function goalPt(G, u, v, bulge) {
   const vv = clamp(v, 0, 1);
   return {
@@ -311,26 +345,79 @@ function drawGoal(G, bulge, ox) {
   g.restore();
 }
 
+// ── 满屏模式的大球门（正面看：门框在前，网往后收；被球打中的地方会被"兜"进去） ──
+function deform(p, N) {
+  if (!N || Math.abs(N.amp) < 0.002) return p;
+  const dx = p.x - N.cx, dy = p.y - N.cy;
+  const f = N.amp * Math.exp(-(dx * dx + dy * dy) / (2 * N.sigma * N.sigma));
+  return { x: p.x - dx * 0.7 * f, y: p.y - dy * 0.7 * f + 8 * f };
+}
+function drawGoalBack(F, N, ox, oy) {
+  const TL = { x: F.x0, y: F.y0 }, TR = { x: F.x1, y: F.y0 }, BL = { x: F.x0, y: F.y1 }, BR = { x: F.x1, y: F.y1 };
+  const bTL = { x: F.bx0, y: F.by0 }, bTR = { x: F.bx1, y: F.by0 }, bBL = { x: F.bx0, y: F.by1 }, bBR = { x: F.bx1, y: F.by1 };
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.fillStyle = 'rgba(28,25,23,0.14)'; // 地上的影子
+  g.beginPath(); g.ellipse((F.x0 + F.x1) / 2, F.y1 + 1, (F.x1 - F.x0) * 0.56, 6, 0, 0, Math.PI * 2); g.fill();
+  // 球网：所有网线合成一条路径，先描深色细边再描白线——浅色、深色背景上都看得清
+  g.beginPath();
+  const line = (a, b) => { for (let i = 0; i <= 14; i++) { const p = deform(Q(a, b, i / 14), N); i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y); } };
+  for (let i = 0; i <= 10; i++) line(Q(bTL, bTR, i / 10), Q(bBL, bBR, i / 10));      // 后网竖线
+  for (let j = 0; j <= 6; j++) line(Q(bTL, bBL, j / 6), Q(bTR, bBR, j / 6));         // 后网横线
+  for (let i = 1; i < 10; i++) line(Q(TL, TR, i / 10), Q(bTL, bTR, i / 10));         // 顶网
+  for (const k of [1 / 3, 2 / 3]) line(Q(TL, bTL, k), Q(TR, bTR, k));
+  for (let j = 1; j < 6; j++) { line(Q(TL, BL, j / 6), Q(bTL, bBL, j / 6)); line(Q(TR, BR, j / 6), Q(bTR, bBR, j / 6)); } // 侧网
+  for (const k of [1 / 3, 2 / 3]) { line(Q(TL, bTL, k), Q(BL, bBL, k)); line(Q(TR, bTR, k), Q(BR, bBR, k)); }
+  g.strokeStyle = 'rgba(28,25,23,0.32)'; g.lineWidth = 2.4; g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 1.1; g.stroke();
+  g.beginPath(); // 后面的支撑杆
+  g.moveTo(F.x0, F.y0); g.lineTo(F.bx0, F.by0); g.lineTo(F.bx0, F.by1); g.lineTo(F.x0, F.y1);
+  g.moveTo(F.x1, F.y0); g.lineTo(F.bx1, F.by0); g.lineTo(F.bx1, F.by1); g.lineTo(F.x1, F.y1);
+  g.strokeStyle = 'rgba(28,25,23,0.35)'; g.lineWidth = 3.8; g.stroke();
+  g.strokeStyle = '#F5F5F0'; g.lineWidth = 2.2; g.stroke();
+  if (N && N.flash > 0) { // 撞网瞬间的一下闪光
+    const rg = g.createRadialGradient(N.cx, N.cy, 0, N.cx, N.cy, 50);
+    rg.addColorStop(0, `rgba(255,255,255,${(0.8 * N.flash).toFixed(3)})`); rg.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = rg; g.beginPath(); g.arc(N.cx, N.cy, 50, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+function drawGoalFrame(F, ox, oy) { // 前门框：粗白杆 + 深色描边 + 投影
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(F.x0, F.y1); g.lineTo(F.x0, F.y0); g.lineTo(F.x1, F.y0); g.lineTo(F.x1, F.y1);
+  g.shadowColor = 'rgba(0,0,0,0.28)'; g.shadowBlur = 10; g.shadowOffsetY = 3;
+  g.strokeStyle = 'rgba(28,25,23,0.55)'; g.lineWidth = 9; g.stroke();
+  g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
+  g.strokeStyle = '#FAFAF8'; g.lineWidth = 6; g.stroke();
+  g.restore();
+}
+function drawCountdownLine(base, progress, ox, oy) { // 倒计时：球门脚下一条橙线，慢慢变短
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineWidth = 3;
+  g.strokeStyle = 'rgba(28,25,23,0.14)'; g.beginPath(); g.moveTo(base.x0, base.y); g.lineTo(base.x1, base.y); g.stroke();
+  if (progress > 0.002) { g.strokeStyle = '#F97316'; g.beginPath(); g.moveTo(base.x0, base.y); g.lineTo(lerp(base.x0, base.x1, progress), base.y); g.stroke(); }
+  g.restore();
+}
+
 // ── 垃圾桶（你原来设想的版本，用来对比） ──
-function withBin(B, wob, ox, fn) {
-  g.save(); g.translate(B.cx + ox, B.top + B.h); g.rotate(wob); g.translate(-B.cx, -(B.top + B.h)); fn(); g.restore();
+function withBin(B, wob, ox, oy, fn) {
+  g.save(); g.translate(B.cx + ox, B.top + B.h + oy); g.rotate(wob); g.translate(-B.cx, -(B.top + B.h)); fn(); g.restore();
 }
-function drawBinBack(B, wob, ox) {
-  withBin(B, wob, ox, () => { g.fillStyle = '#44403C'; g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, 0, Math.PI * 2); g.fill(); });
+function drawBinBack(B, wob, ox, oy) {
+  withBin(B, wob, ox, oy, () => { g.fillStyle = '#44403C'; g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, B.ry, 0, 0, Math.PI * 2); g.fill(); });
 }
-function drawBinFront(B, wob, ox) {
-  withBin(B, wob, ox, () => {
+function drawBinFront(B, wob, ox, oy) {
+  withBin(B, wob, ox, oy, () => {
     const l0 = B.cx - B.wTop / 2, r0 = B.cx + B.wTop / 2, l1 = B.cx - B.wBot / 2, r1 = B.cx + B.wBot / 2, bot = B.top + B.h;
-    g.fillStyle = '#D6D3D1';
-    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, Math.PI, 0, true); g.lineTo(r1, bot); g.lineTo(l1, bot); g.closePath(); g.fill();
-    g.strokeStyle = 'rgba(87,83,78,0.55)'; g.lineWidth = 1;
-    for (const f of [0.25, 0.5, 0.75]) { g.beginPath(); g.moveTo(lerp(l0, r0, f), B.top + 6); g.lineTo(lerp(l1, r1, f), bot - 3); g.stroke(); }
-    g.strokeStyle = '#F5F5F0'; g.lineWidth = 2;
-    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, 3.5, 0, 0, Math.PI); g.stroke();
+    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, B.ry, 0, Math.PI, 0, true); g.lineTo(r1, bot); g.lineTo(l1, bot); g.closePath();
+    g.fillStyle = '#D6D3D1'; g.fill();
+    if (B.lw > 1) { g.strokeStyle = 'rgba(28,25,23,0.4)'; g.lineWidth = B.lw; g.stroke(); }
+    g.strokeStyle = 'rgba(87,83,78,0.55)'; g.lineWidth = B.lw;
+    for (const f of [0.25, 0.5, 0.75]) { g.beginPath(); g.moveTo(lerp(l0, r0, f), B.top + B.ry * 1.7); g.lineTo(lerp(l1, r1, f), bot - 3 * B.lw); g.stroke(); }
+    g.strokeStyle = '#F5F5F0'; g.lineWidth = 2 * B.lw;
+    g.beginPath(); g.ellipse(B.cx, B.top, B.wTop / 2, B.ry, 0, 0, Math.PI); g.stroke();
   });
 }
 
-// ── 粒子、冲击圈、瞄准虚线 ──
+// ── 粒子、冲击圈、拖尾、瞄准虚线 ──
 const parts = [], rings = [];
 function burst(x, y, n, dir, colors, spread = 1) {
   for (let i = 0; i < n; i++) parts.push({
@@ -359,10 +446,17 @@ function drawFx() {
     g.fillStyle = p.c; g.fillRect(-p.s, -p.s * 0.6, p.s * 2, p.s * 1.2); g.restore();
   }
 }
+function drawTrail(s) {
+  s.trail.forEach((p, i) => {
+    const k = (i + 1) / s.trail.length;
+    g.save(); g.globalAlpha *= 0.22 * k; g.fillStyle = S.field === 'corner' ? '#FAFAF8' : '#F97316';
+    g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + 0.5 * k), 0, Math.PI * 2); g.fill(); g.restore();
+  });
+}
 function drawAim(s, a) { // 鼠标悬停在球上时，显示一条虚线告诉你"点一下会往哪飞"
   if (a <= 0.01) return;
   const { p0, c, p2 } = s.path;
-  g.save(); g.globalAlpha = a; g.fillStyle = S.field === 'corner' ? 'rgba(255,255,255,0.45)' : 'rgba(249,115,22,0.75)';
+  g.save(); g.globalAlpha *= a; g.fillStyle = S.field === 'corner' ? 'rgba(255,255,255,0.45)' : 'rgba(249,115,22,0.75)';
   let prev = p0, acc = 0;
   for (let i = 1; i <= 90; i++) {
     const u = i / 90, p = bez(p0, c, p2, u);
@@ -372,33 +466,52 @@ function drawAim(s, a) { // 鼠标悬停在球上时，显示一条虚线告诉�
   g.restore();
 }
 
-// ── 布局：胶囊、球门/垃圾桶、球的起点、飞行路线 ──
+// ── 布局：球的起点、球门/垃圾桶的位置、飞行路线 ──
 function layout(s) {
-  const L = W - BOX.right - BOX.w, T = H - BOX.bottom - BOX.h, ground = T + 60;
-  s.ground = ground;
-  s.goal = { m: L + 132, yT: ground - 32, yG: ground, D: 40, bulgePx: 13 };
-  s.bin = { cx: L + 158, top: ground - 32, h: 32, wTop: 30, wBot: 22 };
+  const k = s.rand;
   if (S.field === 'corner') {
+    const L = W - BOX.right - BOX.w, T = H - BOX.bottom - BOX.h, ground = T + 60;
+    s.ground = ground;
+    s.goal = { m: L + 132, yT: ground - 32, yG: ground, D: 40, bulgePx: 13 };
+    s.bin = { cx: L + 158, top: ground - 32, h: 32, wTop: 30, wBot: 22, ry: 3.5, lw: 1 };
     s.r0 = 12; s.rEnd = 10.5; s.rest = { x: L + 36, y: ground - 12 };
   } else {
+    const gw = BIG.w * S.size, gh = BIG.h * S.size;
+    const x1 = W - BIG.right, x0 = x1 - gw, y1 = H - BIG.bottom, y0 = y1 - gh;
+    s.ground = y1;
+    s.front = { x0, y0, x1, y1, bx0: x0 + gw * 0.12, bx1: x1 - gw * 0.12, by0: y0 + gh * 0.26, by1: y1 - gh * 0.08 };
+    const bh = 90 * S.size;
+    s.bin = { cx: x1 - gw / 2, top: y1 - bh, h: bh, wTop: 78 * S.size, wBot: 58 * S.size, ry: 9 * S.size, lw: 2 };
+    s.base = S.target === 'goal'
+      ? { x0: x0 + 3, x1: x1 - 3, y: y1 + 11 }
+      : { x0: s.bin.cx - s.bin.wTop / 2, x1: s.bin.cx + s.bin.wTop / 2, y: y1 + 11 };
+    s.net.sigma = 30 * S.size;
     s.r0 = 18; s.rEnd = 10.5;
-    let x = clamp(s.anchor.x + 26, 40, W - 40), y = clamp(s.anchor.y + 24, 90, H - 40);
-    if (x > L - 50 && y > T - 50) { x = L - 60; y = Math.min(y, T - 30); } // 别和角落胶囊叠在一起
+    const minY = $('#bar').getBoundingClientRect().bottom + 30;
+    let x = clamp(s.anchor.x + 26, 40, W - 40), y = clamp(s.anchor.y + 24, minY, H - 40);
+    if (x > x0 - 80 && y > y0 - 100) { x = x0 - 110; y = Math.min(y, y0 - 60); } // 别和球门叠在一起
     s.rest = { x, y };
   }
-  const p0 = { ...s.rest }, k = s.rand;
-  if (S.target === 'goal') {
+  const p0 = { ...s.rest };
+  if (S.field === 'screen' && S.target === 'goal') {
+    const F = s.front, top = s.rand2 < 0.4; // 四成概率打"上角"——最爽的位置
+    const u = top ? (s.rand3 < 0.5 ? 0.18 : 0.82) + (k - 0.5) * 0.08 : 0.3 + k * 0.4;
+    const v = top ? 0.2 + k * 0.1 : 0.35 + s.rand3 * 0.35;
+    const p2 = { x: lerp(F.bx0, F.bx1, u), y: lerp(F.by0, F.by1, v) };
+    const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
+    s.rEnd = s.r0 * 0.56;
+    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.5), y: Math.min(p0.y, p2.y) - clamp(dist * 0.15, 30, 120) * (0.8 + k * 0.4) },
+      dur: clamp(dist / 1700 + 0.24, 0.4, 0.72) };
+  } else if (S.target === 'goal') {
     const G = s.goal, p2 = { x: G.m + 5, y: lerp(G.yT, G.yG, 0.5 + (k - 0.5) * 0.2) };
-    const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
-    const arc = S.field === 'corner' ? 12 + k * 10 : clamp(dist * 0.22, 50, 200) * (0.85 + k * 0.3);
-    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.5), y: Math.min(p0.y, p2.y) - arc },
-      dur: S.field === 'corner' ? 0.34 : clamp(dist / 1500 + 0.22, 0.42, 0.8) };
+    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.5), y: Math.min(p0.y, p2.y) - (12 + k * 10) }, dur: 0.34 };
   } else {
-    const B = s.bin, p2 = { x: B.cx, y: B.top - 3 };
+    const B = s.bin, corner = S.field === 'corner';
+    const p2 = { x: B.cx + (k - 0.5) * B.wTop * 0.25, y: B.top - B.ry * 0.5 };
     const dist = Math.hypot(p2.x - p0.x, p2.y - p0.y);
-    const arc = S.field === 'corner' ? 56 + k * 12 : clamp(dist * 0.4, 110, 320);
-    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.62), y: Math.min(p0.y, p2.y) - arc },
-      dur: S.field === 'corner' ? 0.6 : clamp(dist / 1300 + 0.35, 0.6, 1.0) };
+    if (!corner) s.rEnd = s.r0 * 0.8;
+    s.path = { p0, p2, c: { x: lerp(p0.x, p2.x, 0.62), y: Math.min(p0.y, p2.y) - (corner ? 56 + k * 12 : clamp(dist * 0.4, 110, 320)) },
+      dur: corner ? 0.6 : clamp(dist / 1300 + 0.35, 0.6, 1.0) };
   }
 }
 
@@ -410,16 +523,18 @@ function startCapture(anchor) {
   const cur = S.session;
   if (cur && BUSY.includes(cur.phase)) return; // 正在进球动画里，先不打断
   audio(); // 借这次用户操作把声音"解锁"（浏览器要求先有用户操作才能出声）
-  const s = { phase: 'appear', t: 0, anchor, rand: Math.random(), remaining: COUNTDOWN, hover: false, hoverA: 0,
-    trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0, fade: 1, shake: 0, lastSecond: false };
-  S.session = s; layout(s);
-  s.ball = { x: s.rest.x, y: s.rest.y, r: s.r0, rot: 0, sx: 1, sy: 1, a: 1, vx: 0, vy: 0 };
-  bubble.classList.remove('ok', 'leaving'); void bubble.offsetWidth; bubble.classList.add('on');
+  const s = {
+    phase: 'appear', t: 0, anchor, rand: Math.random(), rand2: Math.random(), rand3: Math.random(),
+    remaining: COUNTDOWN, hover: false, hoverA: 0, trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0,
+    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false,
+    net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
+  };
+  S.session = s; S.freeze = 0; layout(s);
+  s.ball = { x: s.rest.x, y: s.rest.y, r: s.r0, rot: 0, sx: 1, sy: 1, a: 1, vx: 0, vy: 0, dir: 0 };
+  pop.classList.remove('show', 'hide');
+  bubble.classList.remove('ok', 'leaving', 'on');
+  if (S.field === 'corner') { void bubble.offsetWidth; bubble.classList.add('on'); }
   updateCountdownUI(s); placeHit(s); hideNote();
-  if (S.field === 'screen' && !S.warned) {
-    S.warned = true;
-    showNote('满屏模式：球会出现在你鼠标旁边。留意一下它有没有挡住你正在看的字、正要点的按钮。');
-  }
 }
 function placeHit(s) {
   const r = s.r0 * 1.5;
@@ -428,21 +543,50 @@ function placeHit(s) {
 function kick() {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
   s.lastSecond = s.remaining <= 1.05;
-  s.phase = 'kick'; s.t = 0; hit.style.display = 'none';
-  Object.assign(s.ball, { x: s.rest.x, y: s.rest.y, r: s.r0, a: 1 });
+  s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none';
+  const b = s.ball;
+  Object.assign(b, { x: s.rest.x, y: s.rest.y, r: s.r0, a: 1, dir: Math.atan2(s.path.c.y - s.rest.y, s.path.c.x - s.rest.x) });
   SFX.kick(S.field === 'corner' ? 0.8 : 1);
-  ring(s.ball.x, s.ball.y, s.r0, S.field === 'corner' ? '#FFFFFF' : '#F97316');
+  if (S.field === 'corner') ring(b.x, b.y, s.r0, '#FFFFFF');
+  else { ring(b.x, b.y, s.r0, '#F97316'); burst(b.x, b.y + s.r0 * 0.7, 7, -1, ['#A8A29E', '#D6D3D1', '#FAFAF8'], 0.45); }
+}
+function hitFront(s) { // 满屏模式：球打在后网上——定格、网兜进去、闪光、彩屑、球门抖一下
+  const N = s.net, b = s.ball;
+  N.cx = s.path.p2.x; N.cy = s.path.p2.y; N.v += 13; N.flash = 1; N.hold = 0.14;
+  b.vx = (Math.random() - 0.5) * 70; b.vy = 0;
+  S.freeze = 0.08; s.shake = 0.3;
+  ring(N.cx, N.cy, 16, '#F97316');
+  burst(N.cx, N.cy, 22, -1, ['#F97316', '#FDBA74', '#FAFAF8', '#FACC15'], 1.1);
+  burst(N.cx, N.cy, 10, 1, ['#F97316', '#FAFAF8'], 0.7);
+  score(s);
 }
 function score(s) {
   if (s.phase !== 'net') return;
-  s.phase = 'scored'; s.t = 0; s.shake = 0.22;
+  s.phase = 'scored'; s.t = 0;
   S.goals++; $('#score').textContent = `今日 ${S.goals} 球`;
-  if (S.target === 'goal') SFX.net(); else SFX.clang();
   const list = CHEERS[S.target];
-  $('#msgA').textContent = (s.lastSecond && S.target === 'goal' ? '绝杀！' : list[Math.floor(Math.random() * list.length)]) + '已收藏';
-  $('#msgB').textContent = `今日第 ${S.goals} 球`;
-  setTimeout(() => { if (S.session === s) bubble.classList.add('ok'); }, 90);
+  const cheer = s.lastSecond && S.target === 'goal' ? '绝杀！' : list[Math.floor(Math.random() * list.length)];
+  if (S.target === 'bin') SFX.clang(); else if (S.field === 'corner') SFX.net(); else SFX.goalBig();
+  if (S.field === 'corner') {
+    s.shake = 0.22;
+    $('#msgA').textContent = cheer + '已收藏';
+    $('#msgB').textContent = `今日第 ${S.goals} 球`;
+    setTimeout(() => { if (S.session === s) bubble.classList.add('ok'); }, 90);
+  } else {
+    showPop(s, cheer);
+  }
 }
+function showPop(s, cheer) {
+  const goal = S.target === 'goal';
+  const cx = goal ? (s.front.x0 + s.front.x1) / 2 : s.bin.cx;
+  const top = goal ? s.front.y0 : s.bin.top - s.bin.ry;
+  popAnchor.style.left = Math.min(cx, W - 100) + 'px';
+  popAnchor.style.top = top - 16 + 'px';
+  $('#popA').textContent = cheer;
+  $('#popB').textContent = `已收藏 · 今日第 ${S.goals} 球`;
+  pop.classList.remove('show', 'hide'); void pop.offsetWidth; pop.classList.add('show');
+}
+function hidePop() { if (pop.classList.contains('show')) { pop.classList.remove('show'); pop.classList.add('hide'); } }
 function expire(reason) {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
   s.phase = 'expire'; s.t = 0; s.ball.vx = -150; hit.style.display = 'none';
@@ -450,8 +594,9 @@ function expire(reason) {
   showNote(reason === 'esc' ? '按了 Esc：这次不收藏。' : '5 秒没踢：按现在的逻辑自动丢弃，不收藏。');
 }
 function endSession() {
-  S.session = null; hit.style.display = 'none';
+  S.session = null; S.freeze = 0; hit.style.display = 'none';
   bubble.classList.remove('on', 'ok', 'leaving'); bubble.style.translate = '';
+  pop.classList.remove('show', 'hide');
 }
 function updateCountdownUI(s) {
   $('#cd').textContent = Math.max(0, Math.ceil(s.remaining)) + 's';
@@ -461,11 +606,11 @@ let noteTimer = 0;
 function showNote(text) { note.textContent = text; note.classList.add('on'); clearTimeout(noteTimer); noteTimer = setTimeout(hideNote, 3200); }
 function hideNote() { note.classList.remove('on'); }
 
-// 球进网后的小物理：撞后网 → 网鼓起 → 球落地弹两下
+// 角落模式：球进网后的小物理——撞后网 → 网鼓起 → 球落地弹两下
 function hitNet(s, x, y) {
   s.bulgeV += 15 + Math.min(10, Math.max(0, s.ball.vx) / 60);
   score(s);
-  burst(x, y, S.field === 'corner' ? 12 : 18, 1, ['#F97316', '#FDBA74', '#FAFAF8']);
+  burst(x, y, 12, 1, ['#F97316', '#FDBA74', '#FAFAF8']);
 }
 function stepGoalBall(s, dt) {
   const b = s.ball, G = s.goal;
@@ -488,26 +633,44 @@ function stepGoalBall(s, dt) {
   }
   if (s.phase !== 'net' && b.x - b.r < G.m + 2) { b.x = G.m + 2 + b.r; b.vx = Math.abs(b.vx) * 0.3; } // 进球后别滚出门外
 }
+// 满屏模式：球先被网兜住一下，再掉到网底弹两下
+function stepFrontBall(s, dt) {
+  const b = s.ball, F = s.front, N = s.net;
+  if (N.hold > 0) {
+    N.hold -= dt;
+    const p = deform({ x: N.cx, y: N.cy }, N);
+    b.x = p.x; b.y = p.y; b.rot += 4 * dt;
+    return;
+  }
+  b.vy += 1400 * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot += (b.vx / Math.max(4, b.r)) * dt;
+  const floor = F.by1 - b.r * 0.85;
+  if (b.y > floor) { b.y = floor; b.vy = b.vy > 60 ? -b.vy * 0.35 : 0; b.vx *= Math.pow(0.1, dt); }
+  b.x = clamp(b.x, F.bx0 + b.r, F.bx1 - b.r);
+}
 // 垃圾桶版：球从上面掉进桶里 → 桶晃一晃
 function stepBinBall(s, dt) {
   const b = s.ball, B = s.bin;
   b.vy += 1800 * dt; b.vx *= Math.pow(0.02, dt); b.x += b.vx * dt * 0.4; b.y += b.vy * dt; b.rot += 6 * dt;
   b.x = clamp(b.x, B.cx - B.wTop / 2 + b.r * 0.6, B.cx + B.wTop / 2 - b.r * 0.6);
-  if (s.phase === 'net' && b.y > B.top + 8) {
-    s.wobV += 5.5; score(s);
-    burst(B.cx, B.top, 8, 1, ['#D6D3D1', '#FAFAF8', '#A8A29E'], 0.7);
-    burst(B.cx, B.top, 6, -1, ['#D6D3D1', '#FAFAF8'], 0.6);
+  if (s.phase === 'net' && b.y > B.top + B.ry * 2.3) {
+    const corner = S.field === 'corner';
+    s.wobV += corner ? 5.5 : 3.2; score(s);
+    burst(B.cx, B.top, corner ? 8 : 14, 1, ['#D6D3D1', '#FAFAF8', '#A8A29E'], 0.7);
+    burst(B.cx, B.top, corner ? 6 : 12, -1, ['#D6D3D1', '#FAFAF8'], 0.6);
   }
   const floor = B.top + B.h - 3 - b.r;
   if (b.y > floor) { b.y = floor; b.vy = 0; }
 }
 
 function update(dt) {
+  if (S.freeze > 0) { S.freeze -= dt; return; } // 撞网瞬间定格 0.08 秒，打击感更强
   stepFx(dt);
   const s = S.session; if (!s) return;
   s.t += dt;
-  s.bulgeV += (-230 * s.bulge - 9 * s.bulgeV) * dt; s.bulge += s.bulgeV * dt; // 球网弹簧
+  s.bulgeV += (-230 * s.bulge - 9 * s.bulgeV) * dt; s.bulge += s.bulgeV * dt; // 角落球网弹簧
   s.wobV += (-260 * s.wob - 7 * s.wobV) * dt; s.wob += s.wobV * dt;           // 垃圾桶弹簧
+  const N = s.net; N.v += (-210 * N.amp - 9 * N.v) * dt; N.amp += N.v * dt;   // 大球门的网
+  N.flash = Math.max(0, N.flash - dt / 0.2);
   s.shake = Math.max(0, s.shake - dt);
   s.hoverA = lerp(s.hoverA, s.hover && s.phase === 'wait' ? 1 : 0, 1 - Math.exp(-dt * 14));
   const b = s.ball;
@@ -518,48 +681,58 @@ function update(dt) {
   switch (s.phase) {
     case 'appear': {
       const k = clamp(s.t / (S.field === 'corner' ? 0.42 : 0.32), 0, 1);
-      if (S.field === 'corner') { b.y = s.rest.y - 34 * (1 - easeOutBounce(k)); b.a = clamp(k * 3, 0, 1); }
-      else { b.r = s.r0 * Math.max(0.001, easeOutBack(k)); }
-      if (k >= 1) { s.phase = 'wait'; s.t = 0; }
+      b.x = s.rest.x; b.y = s.rest.y; // 窗口大小变了，球也跟着新位置走
+      if (S.field === 'corner') { b.y -= 34 * (1 - easeOutBounce(k)); b.a = clamp(k * 3, 0, 1); }
+      else { b.r = s.r0 * Math.max(0.001, easeOutBack(k)); s.rise = (1 - easeOutBack(k)) * 24; }
+      if (k >= 1) { s.phase = 'wait'; s.t = 0; s.rise = 0; }
       break;
     }
     case 'wait':
-      b.r = s.r0 * (1 + 0.07 * s.hoverA); b.y = s.rest.y; b.a = 1;
+      b.r = s.r0 * (1 + 0.07 * s.hoverA); b.x = s.rest.x; b.y = s.rest.y; b.a = 1;
       break;
     case 'kick': { // 触球瞬间：球被踢扁一下
       const k = clamp(s.t / 0.07, 0, 1), q = Math.sin(Math.PI * k);
-      b.sx = 1 + 0.26 * q; b.sy = 1 - 0.2 * q;
+      b.sx = 1 - 0.2 * q; b.sy = 1 + 0.24 * q;
       if (k >= 1) { s.phase = 'fly'; s.t = 0; b.sx = b.sy = 1; SFX.whoosh(s.path.dur); }
       break;
     }
     case 'fly': {
       const { p0, c, p2, dur } = s.path, t = clamp(s.t / dur, 0, 1);
+      const bigGoal = S.field === 'screen' && S.target === 'goal';
       const u = S.target === 'goal' ? 0.5 * t + 0.5 * (1 - (1 - t) * (1 - t)) : t;
       const p = bez(p0, c, p2, u);
-      s.trail.push({ x: b.x, y: b.y, r: b.r }); if (s.trail.length > 7) s.trail.shift();
+      s.trail.push({ x: b.x, y: b.y, r: b.r }); if (s.trail.length > (S.field === 'screen' ? 9 : 7)) s.trail.shift();
+      if (Math.hypot(p.x - b.x, p.y - b.y) > 0.01) b.dir = Math.atan2(p.y - b.y, p.x - b.x);
       b.x = p.x; b.y = p.y; b.r = lerp(s.r0, s.rEnd, u); b.rot += dt * (S.target === 'goal' ? 22 : 13);
-      const st = 1 + 0.12 * Math.sin(Math.PI * Math.min(1, t * 2.5));
+      const st = 1 + 0.14 * Math.sin(Math.PI * Math.min(1, t * 2.5));
       b.sx = st; b.sy = 1 / st;
+      s.inside = bigGoal && u > 0.86; // 快到的时候，球要画到门框后面，看起来才像"钻进门里"
       if (t >= 1) {
-        const du = S.target === 'goal' ? 0.5 : 1;
-        b.vx = 2 * (p2.x - c.x) / dur * du; b.vy = 2 * (p2.y - c.y) / dur * du;
-        if (S.target === 'goal') b.vx = Math.max(b.vx, 280);
-        s.phase = 'net'; s.t = 0; b.sx = b.sy = 1;
+        b.sx = b.sy = 1; s.phase = 'net'; s.t = 0;
+        if (bigGoal) hitFront(s);
+        else {
+          const du = S.target === 'goal' ? 0.5 : 1;
+          b.vx = 2 * (p2.x - c.x) / dur * du; b.vy = 2 * (p2.y - c.y) / dur * du;
+          if (S.target === 'goal') b.vx = Math.max(b.vx, 280);
+        }
       }
       break;
     }
-    case 'net': case 'scored': case 'leave':
+    case 'net': case 'scored': case 'leave': {
       if (s.trail.length) s.trail.shift();
-      if (S.target === 'goal') stepGoalBall(s, dt); else stepBinBall(s, dt);
+      if (S.field === 'screen' && S.target === 'goal') stepFrontBall(s, dt);
+      else if (S.target === 'goal') stepGoalBall(s, dt); else stepBinBall(s, dt);
       if (s.phase === 'net' && s.t > 0.5) { // 保险：无论如何都算进
         if (S.target === 'goal') hitNet(s, b.x + b.r, b.y); else score(s);
       }
-      if (s.phase === 'scored' && s.t > 1.25) { s.phase = 'leave'; s.t = 0; bubble.classList.add('leaving'); }
-      if (s.phase === 'leave') { s.fade = 1 - clamp(s.t / 0.22, 0, 1); if (s.t > 0.25) endSession(); }
+      const hold = S.field === 'screen' ? 1.6 : 1.25;
+      if (s.phase === 'scored' && s.t > hold) { s.phase = 'leave'; s.t = 0; bubble.classList.add('leaving'); hidePop(); }
+      if (s.phase === 'leave') { s.fade = 1 - clamp(s.t / 0.25, 0, 1); if (s.t > 0.28) endSession(); }
       break;
+    }
     case 'expire':
       if (S.field === 'corner') { b.x += b.vx * dt; b.rot += (b.vx / b.r) * dt; b.a = 1 - clamp(s.t / 0.45, 0, 1); }
-      else { b.r = s.r0 * (1 - clamp(s.t / 0.25, 0, 1)); }
+      else { b.r = s.r0 * (1 - clamp(s.t / 0.25, 0, 1)); s.rise = clamp(s.t / 0.35, 0, 1) * 12; }
       s.fade = 1 - clamp((s.t - 0.1) / 0.3, 0, 1);
       if (s.t > 0.45) endSession();
       break;
@@ -570,24 +743,28 @@ function render() {
   g.setTransform(DPR, 0, 0, DPR, 0, 0); g.clearRect(0, 0, W, H);
   const s = S.session;
   if (s) {
-    const ox = s.shake > 0 ? Math.sin(s.shake * 90) * 3 * (s.shake / 0.22) : 0;
-    bubble.style.translate = ox ? `${ox.toFixed(2)}px 0` : '';
-    const b = s.ball;
+    const corner = S.field === 'corner', bigGoal = !corner && S.target === 'goal';
+    const k = s.shake > 0 ? s.shake / (corner ? 0.22 : 0.3) : 0;
+    const ox = k ? Math.sin(s.shake * 90) * (corner ? 3 : 4.5) * k : 0;
+    const oy = (k && !corner ? Math.cos(s.shake * 70) * 1.6 * k : 0) + s.rise;
+    bubble.style.translate = corner && ox ? `${ox.toFixed(2)}px 0` : '';
+    const b = s.ball, inPlay = ['appear', 'wait', 'kick', 'fly', 'expire'].includes(s.phase);
+    const ballBehind = bigGoal && (s.inside || !inPlay);
     g.save(); g.globalAlpha = s.fade * (s.phase === 'appear' ? clamp(s.t / 0.25, 0, 1) : 1);
-    if (S.target === 'bin') drawBinBack(s.bin, s.wob, ox);
-    if (S.field === 'corner' && ['appear', 'wait', 'kick', 'fly', 'expire'].includes(s.phase)) {
-      drawShadow(b.x, s.ground, s.r0, clamp((s.ground - b.y - b.r) / 50, 0, 1), b.a);
-    } else if (S.field === 'screen' && ['appear', 'wait', 'kick'].includes(s.phase)) {
-      drawShadow(b.x, s.rest.y + s.r0 + 3, b.r, 0, b.a);
-    }
-    s.trail.forEach((p, i) => {
-      const k = (i + 1) / s.trail.length;
-      g.save(); g.globalAlpha *= 0.22 * k; g.fillStyle = S.field === 'corner' ? '#FAFAF8' : '#F97316';
-      g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + 0.5 * k), 0, Math.PI * 2); g.fill(); g.restore();
-    });
+    if (bigGoal) drawGoalBack(s.front, s.net, ox, oy);
+    else if (S.target === 'bin') drawBinBack(s.bin, s.wob, ox, oy);
+    if (corner && inPlay) drawShadow(b.x, s.ground, s.r0, clamp((s.ground - b.y - b.r) / 50, 0, 1), b.a);
+    else if (!corner && ['appear', 'wait', 'kick'].includes(s.phase)) drawShadow(b.x, s.rest.y + s.r0 + 3, b.r, 0, b.a);
+    drawTrail(s);
     drawAim(s, s.hoverA);
-    drawBall(b);
-    if (S.target === 'goal') drawGoal(s.goal, s.bulge, ox); else drawBinFront(s.bin, s.wob, ox);
+    if (!bigGoal || ballBehind) drawBall(b);
+    if (bigGoal) drawGoalFrame(s.front, ox, oy);
+    else if (S.target === 'goal') drawGoal(s.goal, s.bulge, ox);
+    else drawBinFront(s.bin, s.wob, ox, oy);
+    if (bigGoal && !ballBehind) drawBall(b);
+    if (!corner && ['appear', 'wait', 'kick', 'fly'].includes(s.phase)) {
+      drawCountdownLine(s.base, clamp(s.remaining / COUNTDOWN, 0, 1), ox, oy);
+    }
     g.restore();
   }
   drawFx();
@@ -604,6 +781,7 @@ addEventListener('keydown', (e) => {
 }, true);
 
 resize();
+$('#sizeGrp').classList.toggle('off', S.field === 'corner');
 let last = performance.now();
 requestAnimationFrame(function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000) * S.timeScale; last = now;
