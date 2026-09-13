@@ -65,6 +65,8 @@ export interface FootballTexts {
 export interface FootballOptions {
   countdown: number;
   defaultAction: "save" | "dismiss";
+  /** Goal size relative to the default 170x104 goal (the "large" setting is 1). */
+  goalScale: number;
   /** The user has already pulled the ball once, so the hint is not needed. */
   learned: boolean;
   texts: FootballTexts;
@@ -708,19 +710,22 @@ export class FootballEngine {
     const rand = Math.random();
     const rand2 = Math.random();
     const rand3 = Math.random();
-    const x0 = L.side === "left" ? w.x + GOAL.margin : w.x + w.w - GOAL.margin - GOAL.w;
-    const x1 = x0 + GOAL.w;
+    const scale = clamp(this.opts.goalScale || 1, 0.5, 2);
+    const gw = GOAL.w * scale;
+    const gh = GOAL.h * scale;
+    const x0 = L.side === "left" ? w.x + GOAL.margin : w.x + w.w - GOAL.margin - gw;
+    const x1 = x0 + gw;
     const y1 = w.y + w.h - GOAL.margin;
-    const y0 = y1 - GOAL.h;
+    const y0 = y1 - gh;
     const goal: Goal = {
       x0,
       y0,
       x1,
       y1,
-      bx0: x0 + GOAL.w * 0.12,
-      bx1: x1 - GOAL.w * 0.12,
-      by0: y0 + GOAL.h * 0.26,
-      by1: y1 - GOAL.h * 0.08,
+      bx0: x0 + gw * 0.12,
+      bx1: x1 - gw * 0.12,
+      by0: y0 + gh * 0.26,
+      by1: y1 - gh * 0.08,
     };
     // The ball appears just below-right of the cursor, inside the work area and clear of the goal.
     const cursor = L.cursor ?? { x: w.x + w.w * 0.4, y: w.y + w.h * 0.45 };
@@ -764,7 +769,7 @@ export class FootballEngine {
       squash: null,
       shot: null,
       autoShot: { u, v, k: 0, power: 0.6, aimed: false, bounces: 0 },
-      net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
+      net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 * scale },
       goal,
       base: { x0: x0 + 3, x1: x1 - 3, y: y1 + 11 },
       rest,

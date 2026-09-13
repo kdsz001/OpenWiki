@@ -24,6 +24,9 @@ interface Pop {
   y: number;
 }
 
+/** Goal size setting -> scale of the default goal (the prototype's 中 / 大 / 特大). */
+const GOAL_SCALES: Record<string, number> = { medium: 0.8, large: 1, xlarge: 1.25 };
+
 /**
  * Full-screen, click-through window (label "football-field") that draws the ball,
  * the goal and every animation. It never receives mouse input itself: the small
@@ -60,6 +63,7 @@ export default function FootballField() {
       const game = new FootballEngine(canvas, layout, {
         countdown: seconds >= 1 && seconds <= 30 ? seconds : 5,
         defaultAction: settings.default_action === "save" ? "save" : "dismiss",
+        goalScale: GOAL_SCALES[settings.football_goal_size ?? ""] ?? 1,
         learned: settings.football_tip_seen === "true",
         texts: {
           cheers: [t("bubble.football.nice"), t("bubble.football.beauty"), t("bubble.football.goal")],

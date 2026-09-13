@@ -36,6 +36,11 @@
     "footballDesc": "复制后鼠标旁会出现足球：点一下射门收藏，或按住拉开瞄准，360° 都能踢",
     "footballSound": "足球音效",
     "footballSoundDesc": "踢球、撞墙、进网时播放音效",
+    "footballGoalSize": "球门大小",
+    "footballGoalSizeDesc": "球门越大越好进，也会多挡住一点屏幕角落",
+    "goalMedium": "中",
+    "goalLarge": "大",
+    "goalXLarge": "特大",
     "bubblePosition": "悬浮球位置",
     "positions": {
       "bottom-right": "右下",

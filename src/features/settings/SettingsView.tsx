@@ -112,6 +112,8 @@ export function SettingsView() {
     setDefaultAction,
     footballSound,
     setFootballSound,
+    footballGoalSize,
+    setFootballGoalSize,
     setUrlReadingEnabled,
     setUseJinaReader,
     setTranslateForeignContent,
@@ -514,6 +516,31 @@ export function SettingsView() {
                     onClick={() => setBubbleStyle(opt.value)}
                     className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
                       ${bubbleStyle === opt.value
+                        ? "bg-orange-500/10 dark:bg-orange-500/15 border-orange-300/60 dark:border-orange-500/30 text-orange-700 dark:text-orange-400"
+                        : "bg-white/50 dark:bg-white/[0.04] border-gray-200/50 dark:border-white/[0.08] text-gray-600 dark:text-slate-300"
+                      }`}
+                  >
+                    {t(opt.key)}
+                  </button>
+                ))}
+              </div>
+            </SettingRow>
+          )}
+
+          {/* Football goal size */}
+          {captureMode === "confirm" && bubbleStyle === "football" && (
+            <SettingRow label={t("capture.footballGoalSize")} desc={t("capture.footballGoalSizeDesc")}>
+              <div className="flex gap-1.5">
+                {([
+                  { value: "medium", key: "capture.goalMedium" },
+                  { value: "large", key: "capture.goalLarge" },
+                  { value: "xlarge", key: "capture.goalXLarge" },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFootballGoalSize(opt.value)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
+                      ${footballGoalSize === opt.value
                         ? "bg-orange-500/10 dark:bg-orange-500/15 border-orange-300/60 dark:border-orange-500/30 text-orange-700 dark:text-orange-400"
                         : "bg-white/50 dark:bg-white/[0.04] border-gray-200/50 dark:border-white/[0.08] text-gray-600 dark:text-slate-300"
                       }`}

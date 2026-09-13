@@ -36,6 +36,11 @@
     "footballDesc": "A ball appears next to your cursor: click to shoot and save, or pull it back to aim in any direction",
     "footballSound": "Football sounds",
     "footballSoundDesc": "Play sounds for kicks, rebounds and goals",
+    "footballGoalSize": "Goal size",
+    "footballGoalSizeDesc": "A bigger goal is easier to hit but covers more of the screen corner",
+    "goalMedium": "Medium",
+    "goalLarge": "Large",
+    "goalXLarge": "Extra large",
     "bubblePosition": "Bubble Position",
     "positions": {
       "bottom-right": "Bottom Right",

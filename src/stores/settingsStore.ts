@@ -168,6 +168,7 @@ export type CaptureMode = "auto" | "confirm";
 export type BubbleStyle = "circle" | "bar" | "football";
 export type BubblePosition = "bottom-right" | "bottom-center" | "bottom-left" | "top-right" | "top-center" | "top-left";
 export type DefaultAction = "save" | "dismiss";
+export type FootballGoalSize = "medium" | "large" | "xlarge";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "system" | "zh-CN" | "en-US";
 
@@ -251,6 +252,7 @@ interface SettingsState {
   bubblePosition: BubblePosition;
   defaultAction: DefaultAction;
   footballSound: boolean;
+  footballGoalSize: FootballGoalSize;
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
   useJinaReader: boolean;
@@ -290,6 +292,7 @@ interface SettingsState {
   setBubblePosition: (position: BubblePosition) => void;
   setDefaultAction: (action: DefaultAction) => void;
   setFootballSound: (enabled: boolean) => void;
+  setFootballGoalSize: (size: FootballGoalSize) => void;
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
   setUseJinaReader: (enabled: boolean) => void;
@@ -320,6 +323,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   bubblePosition: "bottom-right" as BubblePosition,
   defaultAction: "dismiss" as DefaultAction,
   footballSound: true,
+  footballGoalSize: "large" as FootballGoalSize,
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
   useJinaReader: true,
@@ -399,6 +403,9 @@ export const useSettingsStore = create<SettingsState>((set) => ({
           : "bottom-right") as BubblePosition,
         defaultAction: (settings.default_action === "save" ? "save" : "dismiss") as DefaultAction,
         footballSound: settings.football_sound !== "false",
+        footballGoalSize: (settings.football_goal_size === "medium" || settings.football_goal_size === "xlarge"
+          ? settings.football_goal_size
+          : "large") as FootballGoalSize,
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         useJinaReader: settings.use_jina_reader !== "false",
@@ -579,6 +586,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ footballSound: enabled });
     updateSetting("football_sound", String(enabled)).catch((e) =>
       console.error("Failed to save football_sound:", e)
+    );
+  },
+
+  setFootballGoalSize: (size) => {
+    set({ footballGoalSize: size });
+    updateSetting("football_goal_size", size).catch((e) =>
+      console.error("Failed to save football_goal_size:", e)
     );
   },
 
