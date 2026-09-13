@@ -21,6 +21,30 @@ const AIM = {
   spread: (35 * Math.PI) / 180,
   direct: (50 * Math.PI) / 180,
 };
+/**
+ * Bank shots (facing away from the goal): the ball leaves (almost) the way it was aimed and
+ * bounces off 1–2 screen edges into the net. Each bounce may be nudged a little so the route
+ * ends in the goal, and the route with the smallest nudge wins. When every route needs too
+ * much, the shot falls back to one bounce plus a curl.
+ */
+const DEG = Math.PI / 180;
+const BANK = {
+  /** Largest nudge per bounce. Turning the launch counts 2.5x, so it turns at most 6°. */
+  bend: 16 * DEG,
+  launchWeight: 2.5,
+  /** Leave an edge at 12° or more instead of sliding along it. */
+  graze: Math.sin(12 * DEG),
+  /** At equal nudges one bounce wins. */
+  twoBias: 1.5 * DEG,
+  /** Hits this close to a corner look odd. */
+  corner: 14,
+  minLastLeg: 90,
+  speed: 1500,
+  speedPerPower: 1500,
+  /** Share of the speed kept after each bounce. */
+  keep: 0.85,
+  maxDur: 1.5,
+};
 
 export interface Point {
   x: number;
@@ -34,6 +58,7 @@ export interface FootballTexts {
   rocket: string;
   tapIn: string;
   rebound: string;
+  doubleRebound: string;
   winner: string;
 }
 
@@ -64,6 +89,37 @@ interface Path {
 
 interface WallPath extends Path {
   n: Point;
+}
+
+/** A spot in the back of the net. */
+interface Landing {
+  P: Point;
+  u: number;
+  v: number;
+}
+
+/** The whole flight, decided at release: straight legs to screen edges (if any), then into the net. */
+interface ShotPlan {
+  k: number;
+  u: number;
+  v: number;
+  pres: WallPath[];
+  path: Path;
+}
+
+/** Where the ball's center can go: the work area inset by the ball radius. */
+interface Table {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+interface EdgeHit {
+  at: Point;
+  n: Point;
+  t: number;
+  corner: boolean;
 }
 
 interface Goal {
@@ -106,7 +162,8 @@ interface Shot {
   k: number;
   power: number;
   aimed: boolean;
-  rebound: boolean;
+  /** Screen edges the ball bounced off on its way in (0 = straight at the goal). */
+  bounces: number;
 }
 
 interface Drag {
@@ -165,7 +222,7 @@ interface Session {
   lastSecond: boolean;
   drag: Drag | null;
   snap: { t: number; x: number; y: number } | null;
-  pre: WallPath | null;
+  pres: WallPath[];
   squash: { t: number; dir: number } | null;
   shot: Shot | null;
   autoShot: Shot;
@@ -193,6 +250,21 @@ const bez = (p0: Point, c: Point, p2: Point, u: number): Point => ({
 /** Angle to turn from direction f to direction d; positive = clockwise on screen. */
 const signedAngle = (fx: number, fy: number, dx: number, dy: number) =>
   Math.atan2(fx * dy - fy * dx, fx * dx + fy * dy);
+const dot = (a: Point, b: Point) => a.x * b.x + a.y * b.y;
+const rotate = (d: Point, a: number): Point => ({
+  x: d.x * Math.cos(a) - d.y * Math.sin(a),
+  y: d.x * Math.sin(a) + d.y * Math.cos(a),
+});
+/** Direction d after bouncing off an edge with normal n (angle in = angle out). */
+const reflect = (d: Point, n: Point): Point => {
+  const k = dot(d, n);
+  return { x: d.x - 2 * k * n.x, y: d.y - 2 * k * n.y };
+};
+/** Unit direction from a to b, plus the distance. */
+const toward = (a: Point, b: Point) => {
+  const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return { x: (b.x - a.x) / l, y: (b.y - a.y) / l, l };
+};
 
 let ballTexture: HTMLCanvasElement | null = null;
 
@@ -445,6 +517,47 @@ function pathFrom(p0: Point, P: Point, power: number, d: Point): Path {
   };
 }
 
+/** From p along d: where the ball's center meets the table edge, and that edge's normal. */
+function rayToEdge(p: Point, d: Point, B: Table): EdgeHit {
+  const tx = d.x > 1e-9 ? (B.x1 - p.x) / d.x : d.x < -1e-9 ? (B.x0 - p.x) / d.x : Infinity;
+  const ty = d.y > 1e-9 ? (B.y1 - p.y) / d.y : d.y < -1e-9 ? (B.y0 - p.y) / d.y : Infinity;
+  const t = Math.max(0, Math.min(tx, ty));
+  const at = { x: p.x + d.x * t, y: p.y + d.y * t };
+  const corner =
+    Math.min(Math.abs(at.x - B.x0), Math.abs(at.x - B.x1)) < BANK.corner &&
+    Math.min(Math.abs(at.y - B.y0), Math.abs(at.y - B.y1)) < BANK.corner;
+  return { at, t, corner, n: tx < ty ? { x: d.x > 0 ? -1 : 1, y: 0 } : { x: 0, y: d.y > 0 ? -1 : 1 } };
+}
+
+/** Whether segment a-b passes through the box. */
+function segmentHitsBox(a: Point, b: Point, box: Table) {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const sides: Array<[number, number]> = [
+    [-dx, a.x - box.x0],
+    [dx, box.x1 - a.x],
+    [-dy, a.y - box.y0],
+    [dy, box.y1 - a.y],
+  ];
+  for (const [p, q] of sides) {
+    if (Math.abs(p) < 1e-9) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) {
+      if (t > t1) return false;
+      t0 = Math.max(t0, t);
+    } else {
+      if (t < t0) return false;
+      t1 = Math.min(t1, t);
+    }
+  }
+  return t0 <= t1;
+}
+
 /**
  * The football game drawn in the full-screen field window. Input arrives from the
  * ball window; saving, sounds and windows are handled by the callbacks.
@@ -647,10 +760,10 @@ export class FootballEngine {
       lastSecond: false,
       drag: null,
       snap: null,
-      pre: null,
+      pres: [],
       squash: null,
       shot: null,
-      autoShot: { u, v, k: 0, power: 0.6, aimed: false, rebound: false },
+      autoShot: { u, v, k: 0, power: 0.6, aimed: false, bounces: 0 },
       net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
       goal,
       base: { x0: x0 + 3, x1: x1 - 3, y: y1 + 11 },
@@ -718,7 +831,7 @@ export class FootballEngine {
     s.shot = s.autoShot;
     s.drag = null;
     s.snap = null;
-    s.pre = null;
+    s.pres = [];
     s.squash = null;
     this.press = null;
     s.phase = "kick";
@@ -741,9 +854,9 @@ export class FootballEngine {
   private launch(s: Session, D: Drag) {
     const d = { x: -D.ux, y: -D.uy };
     const plan = this.planShot(s, { x: D.x, y: D.y }, d, D.power);
-    s.shot = { k: plan.k, u: plan.u, v: plan.v, power: D.power, aimed: true, rebound: plan.pre !== null };
+    s.shot = { k: plan.k, u: plan.u, v: plan.v, power: D.power, aimed: true, bounces: plan.pres.length };
     s.path = plan.path;
-    s.pre = plan.pre;
+    s.pres = plan.pres;
     s.squash = null;
     s.drag = null;
     s.snap = null;
@@ -772,23 +885,28 @@ export class FootballEngine {
   }
 
   /** Left/right follows the aim (k), height follows the power — like a FIFA power bar. */
-  private landing(s: Session, k: number, power: number) {
+  private landing(s: Session, k: number, power: number): Landing {
+    return this.landingAt(s, 0.5 - k / 2, power, 0);
+  }
+
+  /** A spot in the net: across by u (0 = left post), height by power, moved up or down by dv. */
+  private landingAt(s: Session, u: number, power: number, dv: number): Landing {
     const G = s.goal;
-    const hw = (G.bx1 - G.bx0) / 2;
     const hh = (G.by1 - G.by0) / 2;
-    const x = clamp((G.bx0 + G.bx1) / 2 - k * hw, G.bx0 + s.rEnd + 2, G.bx1 - s.rEnd - 2);
-    const y = clamp((G.by0 + G.by1) / 2 + lerp(0.55, -0.75, power) * hh, G.by0 + s.rEnd + 1, G.by1 - s.rEnd - 1);
+    const x = clamp(lerp(G.bx0, G.bx1, u), G.bx0 + s.rEnd + 2, G.bx1 - s.rEnd - 2);
+    const y = clamp((G.by0 + G.by1) / 2 + (lerp(0.55, -0.75, power) + dv) * hh, G.by0 + s.rEnd + 1, G.by1 - s.rEnd - 1);
     return { P: { x, y }, u: (x - G.bx0) / (G.bx1 - G.bx0), v: (y - G.by0) / (G.by1 - G.by0) };
+  }
+
+  private table(s: Session): Table {
+    const w = this.layout.work;
+    const m = s.r0;
+    return { x0: w.x + m, x1: w.x + w.w - m, y0: w.y + m, y1: w.y + w.h - m };
   }
 
   /** From p, flying along d: which work-area edge is hit first, and where. */
   private wallHit(s: Session, p: Point, d: Point) {
-    const w = this.layout.work;
-    const m = s.r0;
-    const x0 = w.x + m;
-    const x1 = w.x + w.w - m;
-    const y0 = w.y + m;
-    const y1 = w.y + w.h - m;
+    const { x0, x1, y0, y1 } = this.table(s);
     const from = { x: clamp(p.x, x0, x1), y: clamp(p.y, y0, y1) };
     const tx = d.x > 1e-6 ? (x1 - from.x) / d.x : d.x < -1e-6 ? (x0 - from.x) / d.x : Infinity;
     const ty = d.y > 1e-6 ? (y1 - from.y) / d.y : d.y < -1e-6 ? (y0 - from.y) / d.y : Infinity;
@@ -798,7 +916,7 @@ export class FootballEngine {
   }
 
   /** The whole flight is decided at release; the ball always ends up in the goal. */
-  private planShot(s: Session, p0: Point, d: Point, power: number) {
+  private planShot(s: Session, p0: Point, d: Point, power: number): ShotPlan {
     const G = s.goal;
     const T = { x: (G.bx0 + G.bx1) / 2, y: (G.by0 + G.by1) / 2 };
     let tx = T.x - p0.x;
@@ -811,9 +929,12 @@ export class FootballEngine {
       // Roughly at the goal: straight in (a big angle curls into a banana kick)
       const k = clamp(delta / AIM.spread, -1, 1);
       const L = this.landing(s, k, power);
-      return { k, u: L.u, v: L.v, pre: null, path: pathFrom(p0, L.P, power, d) };
+      return { k, u: L.u, v: L.v, pres: [], path: pathFrom(p0, L.P, power, d) };
     }
-    // Facing away: straight to the screen edge, bounce (angle in = angle out), curl into the goal
+    // Facing away: a straight bank shot off 1–2 screen edges, when one looks natural enough
+    const bank = this.bankShot(s, p0, d, power);
+    if (bank) return bank;
+    // Otherwise straight to the screen edge, bounce (angle in = angle out), curl into the goal
     const wall = this.wallHit(s, p0, d);
     const dn = d.x * wall.n.x + d.y * wall.n.y;
     const r = { x: d.x - 2 * dn * wall.n.x, y: d.y - 2 * dn * wall.n.y };
@@ -831,7 +952,89 @@ export class FootballEngine {
       n: wall.n,
       dur: clamp(wall.dist / (1500 + 1500 * power), 0.06, 0.6),
     };
-    return { k, u: L.u, v: L.v, pre, path: pathFrom(wall.at, L.P, power * 0.8, r) };
+    return { k, u: L.u, v: L.v, pres: [pre], path: pathFrom(wall.at, L.P, power * 0.8, r) };
+  }
+
+  /** Best straight route off 1–2 edges into the net, or null when every route needs too big a nudge. */
+  private bankShot(s: Session, p0: Point, d: Point, power: number): ShotPlan | null {
+    const B = this.table(s);
+    const G = s.goal;
+    const start = { x: clamp(p0.x, B.x0, B.x1), y: clamp(p0.y, B.y0, B.y1) };
+    const goalBox: Table = { x0: G.x0 - 12, x1: G.x1 + 12, y0: G.y0 - 12, y1: G.y1 + 12 };
+    const spots: Landing[] = [];
+    for (let i = 0; i < 8; i++) {
+      for (const dv of [-0.3, 0, 0.3]) spots.push(this.landingAt(s, 0.15 + 0.1 * i, power, dv));
+    }
+    // The exact launch direction first, then turned one degree at a time either way.
+    const turns = [0];
+    for (let i = 1; i <= Math.floor(BANK.bend / BANK.launchWeight / DEG); i++) turns.push(i * DEG, -i * DEG);
+    let best: { score: number; spot: Landing; hits: EdgeHit[] } | null = null;
+    for (const turn of turns) {
+      const bend0 = Math.abs(turn) * BANK.launchWeight;
+      if (best && bend0 >= best.score) break;
+      const dl = rotate(d, turn);
+      const h1 = rayToEdge(start, dl, B);
+      if (h1.corner || h1.t < 1) continue;
+      const r1 = reflect(dl, h1.n);
+      for (const spot of spots) {
+        // One bounce: from the first edge straight into the net
+        const o = toward(h1.at, spot.P);
+        const bend1 = Math.abs(signedAngle(r1.x, r1.y, o.x, o.y));
+        const one = Math.max(bend0, bend1);
+        if (bend1 <= BANK.bend && (!best || one < best.score) && dot(o, h1.n) >= BANK.graze && this.lastLegOk(h1.at, spot.P)) {
+          best = { score: one, spot, hits: [h1] };
+        }
+        // Two bounces: nudge the first bounce by th; the second nudge follows from it
+        for (let th = -BANK.bend; th <= BANK.bend + 1e-9; th += DEG) {
+          if (best && Math.max(bend0, Math.abs(th)) + BANK.twoBias >= best.score) continue;
+          const o1 = rotate(r1, th);
+          if (dot(o1, h1.n) < BANK.graze) continue;
+          const h2 = rayToEdge(h1.at, o1, B);
+          if (h2.corner || h2.t < 1 || segmentHitsBox(h1.at, h2.at, goalBox)) continue; // never through the goal on the way
+          const o2 = toward(h2.at, spot.P);
+          const r2 = reflect(o1, h2.n);
+          const bend2 = Math.abs(signedAngle(r2.x, r2.y, o2.x, o2.y));
+          const two = Math.max(bend0, Math.abs(th), bend2) + BANK.twoBias;
+          if (bend2 > BANK.bend || (best && two >= best.score)) continue;
+          if (dot(o2, h2.n) < BANK.graze || !this.lastLegOk(h2.at, spot.P)) continue;
+          best = { score: two, spot, hits: [h1, h2] };
+        }
+      }
+    }
+    if (!best) return null;
+    const speed = BANK.speed + BANK.speedPerPower * power;
+    const pts = [start, ...best.hits.map((h) => h.at), best.spot.P];
+    const pres: WallPath[] = best.hits.map((h, i) => ({
+      p0: pts[i],
+      c: mix(pts[i], pts[i + 1], 0.5),
+      p2: pts[i + 1],
+      n: h.n,
+      dur: Math.max(0.05, toward(pts[i], pts[i + 1]).l / (speed * Math.pow(BANK.keep, i))),
+    }));
+    const from = pts[pts.length - 2];
+    const P = best.spot.P;
+    const path: Path = {
+      p0: from,
+      c: mix(from, P, 0.5),
+      p2: P,
+      // The last leg eases out from 1.5x its average speed, which matches the speed after the bounce.
+      dur: Math.max(0.28, (1.5 * toward(from, P).l) / (speed * Math.pow(BANK.keep, pres.length))),
+    };
+    const total = path.dur + pres.reduce((sum, q) => sum + q.dur, 0);
+    if (total > BANK.maxDur) {
+      // Long routes speed up as a whole
+      const f = BANK.maxDur / total;
+      for (const q of pres) q.dur *= f;
+      path.dur *= f;
+    }
+    return { k: clamp((0.5 - best.spot.u) * 2, -1, 1), u: best.spot.u, v: best.spot.v, pres, path };
+  }
+
+  /** The last leg must be long enough and come in from the front or above, not from behind the goal or under it. */
+  private lastLegOk(a: Point, P: Point) {
+    const o = toward(a, P);
+    const across = this.layout.side === "left" ? -o.x : o.x;
+    return o.l >= BANK.minLastLeg && across >= -0.25 && o.y >= -0.35;
   }
 
   private expire() {
@@ -859,7 +1062,8 @@ export class FootballEngine {
     if (s.lastSecond) return T.winner;
     const sh = s.shot;
     if (sh) {
-      if (sh.rebound) return T.rebound;
+      if (sh.bounces >= 2) return T.doubleRebound;
+      if (sh.bounces === 1) return T.rebound;
       if (sh.v < 0.32 && Math.abs(sh.u - 0.5) > 0.28) return T.worldie;
       if (sh.aimed && Math.abs(sh.k) > 0.65) return T.banana;
       if (sh.aimed && sh.power > 0.9) return T.rocket;
@@ -919,15 +1123,29 @@ export class FootballEngine {
     b.x = clamp(b.x, G.bx0 + b.r, G.bx1 - b.r);
   }
 
+  /** Right after an edge hit the ball is squashed against it for a moment. */
+  private stepSquash(s: Session, dt: number) {
+    const sq = s.squash;
+    if (!sq) return;
+    const b = s.ball;
+    sq.t += dt;
+    const k = clamp(sq.t / 0.09, 0, 1);
+    const q = Math.sin(Math.PI * k);
+    b.dir = sq.dir;
+    b.sx = 1 - 0.28 * q;
+    b.sy = 1 + 0.2 * q;
+    if (k >= 1) s.squash = null;
+  }
+
   private stepFlight(s: Session, dt: number) {
     const b = s.ball;
     s.trail.push({ x: b.x, y: b.y, r: b.r });
     if (s.trail.length > 9) s.trail.shift();
     b.rot += dt * 22;
 
-    if (s.pre) {
-      // Rebound shot: straight to the screen edge first
-      const q = s.pre;
+    if (s.pres.length) {
+      // Rebound shot: straight to the next screen edge first
+      const q = s.pres[0];
       const t = clamp(s.t / q.dur, 0, 1);
       const p = bez(q.p0, q.c, q.p2, t);
       if (Math.hypot(p.x - b.x, p.y - b.y) > 0.01) b.dir = Math.atan2(p.y - b.y, p.x - b.x);
@@ -936,9 +1154,10 @@ export class FootballEngine {
       b.r = s.r0;
       b.sx = 1.14;
       b.sy = 1 / 1.14;
+      this.stepSquash(s, dt); // still squashed from the previous edge
       if (t >= 1) {
         // Edge hit: short freeze, squash, thud, spray, then bounce away
-        s.pre = null;
+        s.pres.shift();
         s.t = 0;
         this.freeze = 0.035;
         s.squash = { t: 0, dir: Math.atan2(q.n.y, q.n.x) };
@@ -960,15 +1179,7 @@ export class FootballEngine {
     const stretch = 1 + 0.14 * Math.sin(Math.PI * Math.min(1, t * 2.5));
     b.sx = stretch;
     b.sy = 1 / stretch;
-    if (s.squash) {
-      s.squash.t += dt;
-      const k = clamp(s.squash.t / 0.09, 0, 1);
-      const q = Math.sin(Math.PI * k);
-      b.dir = s.squash.dir;
-      b.sx = 1 - 0.28 * q;
-      b.sy = 1 + 0.2 * q;
-      if (k >= 1) s.squash = null;
-    }
+    this.stepSquash(s, dt);
     // Near the end the ball is drawn behind the frame, so it looks like it went in.
     s.inside = u > 0.86;
     if (t >= 1) {
@@ -1056,7 +1267,7 @@ export class FootballEngine {
           s.phase = "fly";
           s.t = 0;
           b.sx = b.sy = 1;
-          this.opts.onSfx("whoosh", s.path.dur + (s.pre ? s.pre.dur : 0));
+          this.opts.onSfx("whoosh", s.path.dur + s.pres.reduce((sum, q) => sum + q.dur, 0));
         }
         break;
       }

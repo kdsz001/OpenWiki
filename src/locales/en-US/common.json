@@ -71,6 +71,7 @@
       "rocket": "Rocket!",
       "tapIn": "Tap-in!",
       "rebound": "Off the wall!",
+      "doubleRebound": "Off two walls!",
       "winner": "Last-second winner!"
     }
   },

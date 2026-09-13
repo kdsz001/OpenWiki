@@ -68,6 +68,7 @@ export default function FootballField() {
           rocket: t("bubble.football.rocket"),
           tapIn: t("bubble.football.tapIn"),
           rebound: t("bubble.football.rebound"),
+          doubleRebound: t("bubble.football.doubleRebound"),
           winner: t("bubble.football.winner"),
         },
         onBallReady: (x, y) => {
