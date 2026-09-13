@@ -105,7 +105,7 @@ body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
     <div class="win-title">阅读器 — 随手记下的好句子，最后都去哪了？</div>
   </div>
   <div class="doc">
-    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球。<b>点一下</b>自动射门；<b>按住往后拉</b>会出现皮筋、瞄准线和准星，往哪边偏就射向哪边，拉得越满球越快越高，松手射门（拉回原位再松手 = 取消）。Enter 直接射门，Esc 放弃；5 秒不理它就自动丢弃（拉弓时倒计时暂停）。</div>
+    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球。<b>点一下</b>自动射门；<b>按住往后拉</b>像拉弓一样，没有瞄准线，全凭手感：往哪边偏就射向哪边，拉得越满球越快越高，松手射门（拉回原位再松手 = 取消）。Enter 直接射门，Esc 放弃；5 秒不理它就自动丢弃（拉弓时倒计时暂停）。</div>
     <h1>随手记下的好句子，最后都去哪了？</h1>
     <div class="by">示例文章 · 用来模拟你平时在看的网页</div>
     <p>很多人都有这样的习惯：看到一句打动自己的话，顺手复制下来，想着"以后用得上"。可过了一周再回头找，它早就淹没在聊天记录、备忘录和几十个浏览器标签页里了。</p>
@@ -453,7 +453,7 @@ function drawBinFront(B, wob, ox, oy) {
   });
 }
 
-// ── 粒子、冲击圈、拖尾、瞄准虚线 ──
+// ── 粒子、冲击圈、拖尾 ──
 const parts = [], rings = [];
 function burst(x, y, n, dir, colors, spread = 1) {
   for (let i = 0; i < n; i++) parts.push({
@@ -489,78 +489,6 @@ function drawTrail(s) {
     g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + 0.5 * k), 0, Math.PI * 2); g.fill(); g.restore();
   });
 }
-function drawAim(s, a) { // 鼠标悬停在球上时，显示一条虚线告诉你"点一下会往哪飞"
-  if (a <= 0.01) return;
-  const { p0, c, p2 } = s.path;
-  g.save(); g.globalAlpha *= a; g.fillStyle = S.field === 'corner' ? 'rgba(255,255,255,0.45)' : 'rgba(249,115,22,0.75)';
-  let prev = p0, acc = 0;
-  for (let i = 1; i <= 90; i++) {
-    const u = i / 90, p = bez(p0, c, p2, u);
-    acc += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
-    if (u > 0.12 && u < 0.94 && acc >= 7) { acc = 0; g.beginPath(); g.arc(p.x, p.y, 1.4, 0, Math.PI * 2); g.fill(); }
-  }
-  g.restore();
-}
-
-// ── 拉弓时的三样提示：准星、流动的瞄准线、两根皮筋 ──
-function drawReticle(s, ox, oy) { // 准星：球会落在这里（拉满时中间变实心）
-  const D = s.drag; if (!D || !D.valid || !D.P) return;
-  const goal = S.target === 'goal', P = D.P;
-  const r = (8 + 5 * D.power) * (1 + 0.08 * Math.sin(performance.now() / 90)), ry = goal ? r : r * 0.45;
-  const shape = () => {
-    g.beginPath(); g.ellipse(P.x, P.y, r, ry, 0, 0, Math.PI * 2);
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      g.moveTo(P.x + dx * (r + 2), P.y + dy * (ry + 2)); g.lineTo(P.x + dx * (r + 6), P.y + dy * (ry + 6));
-    }
-  };
-  g.save(); g.translate(ox, oy); g.lineCap = 'round';
-  shape(); g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 4.5; g.stroke();
-  shape(); g.strokeStyle = '#F97316'; g.lineWidth = 2.2; g.stroke();
-  if (D.full) { g.fillStyle = '#F97316'; g.beginPath(); g.ellipse(P.x, P.y, 3.2, goal ? 3.2 : 1.8, 0, 0, Math.PI * 2); g.fill(); }
-  g.restore();
-}
-function drawDragDots(s) { // 瞄准线：小圆点一直往目标方向"流"
-  const D = s.drag; if (!D || !D.valid || !D.path) return;
-  const { p0, c, p2 } = D.path, gap = 9;
-  g.save(); g.fillStyle = '#F97316'; g.globalAlpha *= 0.4 + 0.55 * D.power;
-  let prev = p0, acc = gap - (performance.now() / 28) % gap;
-  for (let j = 1; j <= 140; j++) {
-    const u = j / 140, p = bez(p0, c, p2, u);
-    acc += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
-    if (acc < gap) continue;
-    acc -= gap;
-    if (u > 0.08 && u < 0.93) { g.beginPath(); g.arc(p.x, p.y, 1.5 + 1.1 * D.power, 0, Math.PI * 2); g.fill(); }
-  }
-  g.restore();
-}
-function drawBands(s) { // 两根皮筋：拉弓时绷紧（反方向拉会变灰），松手后弹两下消失
-  const R = s.rest, b = s.ball;
-  let ux, uy, bx, by, alpha = 1, tension = 0, color = '#F97316';
-  if (s.drag && s.drag.Ld !== undefined) {
-    ux = s.drag.ux; uy = s.drag.uy; bx = b.x; by = b.y; tension = s.drag.power;
-    if (!s.drag.valid) color = '#A8A29E';
-  } else if (s.band) {
-    const B = s.band, off = B.Ld * Math.exp(-14 * B.t) * Math.cos(30 * B.t);
-    ux = B.ux; uy = B.uy; bx = R.x + ux * off; by = R.y + uy * off; alpha = 1 - clamp(B.t / 0.4, 0, 1);
-  } else if (s.snap) {
-    const d = Math.hypot(b.x - R.x, b.y - R.y); if (d < 1) return;
-    ux = (b.x - R.x) / d; uy = (b.y - R.y) / d; bx = b.x; by = b.y; color = '#A8A29E';
-    alpha = 1 - clamp(s.snap.t / 0.35, 0, 1);
-  } else return;
-  if (alpha <= 0.01) return;
-  const px = -uy, py = ux, A1 = { x: R.x + px * 20, y: R.y + py * 20 }, A2 = { x: R.x - px * 20, y: R.y - py * 20 };
-  const back = { x: bx + ux * s.r0 * 0.55, y: by + uy * s.r0 * 0.55 }, w = lerp(4, 2, tension);
-  g.save(); g.globalAlpha *= alpha; g.lineCap = 'round'; g.lineJoin = 'round';
-  g.beginPath(); g.moveTo(A1.x, A1.y); g.lineTo(back.x, back.y); g.lineTo(A2.x, A2.y);
-  g.strokeStyle = 'rgba(28,25,23,0.35)'; g.lineWidth = w + 2; g.stroke();
-  g.strokeStyle = color; g.lineWidth = w; g.stroke();
-  for (const A of [A1, A2]) {
-    g.beginPath(); g.arc(A.x, A.y, 3.5, 0, Math.PI * 2);
-    g.fillStyle = '#FAFAF8'; g.fill(); g.strokeStyle = 'rgba(28,25,23,0.55)'; g.lineWidth = 1.5; g.stroke();
-  }
-  g.restore();
-}
-
 // ── 布局：球的起点、球门/垃圾桶的位置、飞行路线 ──
 function layout(s) {
   const k = s.rand; s.autoShot = null;
@@ -621,7 +549,7 @@ function startCapture(anchor) {
   const s = {
     phase: 'appear', t: 0, anchor, rand: Math.random(), rand2: Math.random(), rand3: Math.random(),
     remaining: COUNTDOWN, hover: false, hoverA: 0, trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0,
-    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false, drag: null, snap: null, band: null, shot: null,
+    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false, drag: null, snap: null, shot: null,
     net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
   };
   press = null; document.body.classList.remove('dragging'); hideTip();
@@ -703,7 +631,7 @@ function showNote(text) { note.textContent = text; note.classList.add('on'); cle
 function hideNote() { note.classList.remove('on'); }
 
 // ── 拉弓瞄准 ────────────────────────────────────────
-// 方向：往哪边偏就打哪边（偏 35° 到门边）；力度：拉得越满越高越快。准星永远夹在球门里——不会踢飞。
+// 方向：往哪边偏就打哪边（偏 35° 到门边）；力度：拉得越满越高越快。落点永远夹在球门里——不会踢飞。
 function computeAim(s, dx, dy, power) {
   const R = s.rest, goal = S.target === 'goal';
   const T = goal ? { x: (s.front.bx0 + s.front.bx1) / 2, y: (s.front.by0 + s.front.by1) / 2 } : { x: s.bin.cx, y: s.bin.top };
@@ -744,11 +672,10 @@ function updateDrag(s, px, py) {
   if (step > D.lastStep) { if (step >= 8) SFX.full(); else SFX.tick(step); }
   D.full = step >= 8; D.lastStep = step;
 }
-function launch(s) { // 松手：从拉开的位置发射，沿瞄准线飞进准星
+function launch(s) { // 松手：从拉开的位置发射，飞向瞄好的落点（不提前告诉你在哪）
   const D = s.drag, b = s.ball;
   s.shot = { k: D.k, u: D.u, v: D.v, power: D.power, aimed: true };
   s.path = D.path; s.rEnd = S.target === 'goal' ? s.r0 * 0.56 : s.r0 * 0.8;
-  s.band = { t: 0, ux: D.ux, uy: D.uy, Ld: D.Ld };
   s.drag = null; s.snap = null; S.learned = true;
   s.lastSecond = s.remaining <= 1.05;
   s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none'; hideTip();
@@ -840,7 +767,6 @@ function update(dt) {
   stepFx(dt);
   const s = S.session; if (!s) return;
   s.t += dt;
-  if (s.band) { s.band.t += dt; if (s.band.t > 0.4) s.band = null; } // 松手后皮筋弹两下
   s.bulgeV += (-230 * s.bulge - 9 * s.bulgeV) * dt; s.bulge += s.bulgeV * dt; // 角落球网弹簧
   s.wobV += (-260 * s.wob - 7 * s.wobV) * dt; s.wob += s.wobV * dt;           // 垃圾桶弹簧
   const N = s.net; N.v += (-210 * N.amp - 9 * N.v) * dt; N.amp += N.v * dt;   // 大球门的网
@@ -867,6 +793,7 @@ function update(dt) {
         const D = s.drag, j = D.full ? 1.6 : 0;
         b.x = D.x + (Math.random() - 0.5) * j; b.y = D.y + (Math.random() - 0.5) * j; b.r = s.r0;
         b.dir = Math.atan2(D.uy, D.ux); b.sx = 1 + 0.14 * D.power; b.sy = 1 / b.sx;
+        b.a = !D.ok && D.Ld >= AIM.dead ? 0.5 : 1; // 往球门方向推（松手会取消）时，球变半透明
       } else if (s.snap) { // 取消后弹回原位
         const q = s.snap; q.t += dt;
         const e = Math.exp(-7 * q.t) * Math.cos(20 * q.t);
@@ -940,17 +867,14 @@ function render() {
     g.save(); g.globalAlpha = s.fade * (s.phase === 'appear' ? clamp(s.t / 0.25, 0, 1) : 1);
     if (bigGoal) drawGoalBack(s.front, s.net, ox, oy);
     else if (S.target === 'bin') drawBinBack(s.bin, s.wob, ox, oy);
-    drawReticle(s, ox, oy);
     if (corner && inPlay) drawShadow(b.x, s.ground, s.r0, clamp((s.ground - b.y - b.r) / 50, 0, 1), b.a);
     else if (!corner && ['appear', 'wait', 'kick'].includes(s.phase)) drawShadow(b.x, b.y + s.r0 + 3, b.r, 0, b.a);
     drawTrail(s);
-    drawAim(s, s.hoverA);
-    drawDragDots(s);
-    if (!bigGoal || ballBehind) { drawBands(s); drawBall(b); }
+    if (!bigGoal || ballBehind) drawBall(b);
     if (bigGoal) drawGoalFrame(s.front, ox, oy);
     else if (S.target === 'goal') drawGoal(s.goal, s.bulge, ox);
     else drawBinFront(s.bin, s.wob, ox, oy);
-    if (bigGoal && !ballBehind) { drawBands(s); drawBall(b); }
+    if (bigGoal && !ballBehind) drawBall(b);
     if (!corner && ['appear', 'wait', 'kick', 'fly'].includes(s.phase)) {
       drawCountdownLine(s.base, clamp(s.remaining / COUNTDOWN, 0, 1), ox, oy);
     }
