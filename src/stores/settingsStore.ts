@@ -165,7 +165,7 @@ export const SECRET_SETTING_PRESENT = "__openwiki_secret_present__";
 export const isStoredSecretPlaceholder = (value: string) => value === SECRET_SETTING_PRESENT;
 
 export type CaptureMode = "auto" | "confirm";
-export type BubbleStyle = "circle" | "bar";
+export type BubbleStyle = "circle" | "bar" | "football";
 export type BubblePosition = "bottom-right" | "bottom-center" | "bottom-left" | "top-right" | "top-center" | "top-left";
 export type DefaultAction = "save" | "dismiss";
 export type ThemeMode = "light" | "dark" | "system";
@@ -250,6 +250,7 @@ interface SettingsState {
   bubbleStyle: BubbleStyle;
   bubblePosition: BubblePosition;
   defaultAction: DefaultAction;
+  footballSound: boolean;
   sensitiveFilterEnabled: boolean;
   urlReadingEnabled: boolean;
   useJinaReader: boolean;
@@ -288,6 +289,7 @@ interface SettingsState {
   setBubbleStyle: (style: BubbleStyle) => void;
   setBubblePosition: (position: BubblePosition) => void;
   setDefaultAction: (action: DefaultAction) => void;
+  setFootballSound: (enabled: boolean) => void;
   setSensitiveFilterEnabled: (enabled: boolean) => void;
   setUrlReadingEnabled: (enabled: boolean) => void;
   setUseJinaReader: (enabled: boolean) => void;
@@ -317,6 +319,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   bubbleStyle: "circle" as BubbleStyle,
   bubblePosition: "bottom-right" as BubblePosition,
   defaultAction: "dismiss" as DefaultAction,
+  footballSound: true,
   sensitiveFilterEnabled: false,
   urlReadingEnabled: true,
   useJinaReader: true,
@@ -388,11 +391,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         resolvedLanguage,
         captureEnabled: settings.capture_enabled !== "false",
         captureMode: (settings.capture_mode === "auto" ? "auto" : "confirm") as CaptureMode,
-        bubbleStyle: (settings.bubble_style === "bar" ? "bar" : "circle") as BubbleStyle,
+        bubbleStyle: (settings.bubble_style === "bar" || settings.bubble_style === "football"
+          ? settings.bubble_style
+          : "circle") as BubbleStyle,
         bubblePosition: (VALID_BUBBLE_POSITIONS.includes(settings.bubble_position as BubblePosition)
           ? settings.bubble_position
           : "bottom-right") as BubblePosition,
         defaultAction: (settings.default_action === "save" ? "save" : "dismiss") as DefaultAction,
+        footballSound: settings.football_sound !== "false",
         sensitiveFilterEnabled: settings.sensitive_filter_enabled === "true",
         urlReadingEnabled: settings.url_reading_enabled !== "false",
         useJinaReader: settings.use_jina_reader !== "false",
@@ -566,6 +572,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set({ defaultAction: action });
     updateSetting("default_action", action).catch((e) =>
       console.error("Failed to save default_action:", e)
+    );
+  },
+
+  setFootballSound: (enabled) => {
+    set({ footballSound: enabled });
+    updateSetting("football_sound", String(enabled)).catch((e) =>
+      console.error("Failed to save football_sound:", e)
     );
   },
 

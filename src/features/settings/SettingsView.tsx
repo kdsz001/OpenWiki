@@ -110,6 +110,8 @@ export function SettingsView() {
     setSensitiveFilterEnabled,
     defaultAction,
     setDefaultAction,
+    footballSound,
+    setFootballSound,
     setUrlReadingEnabled,
     setUseJinaReader,
     setTranslateForeignContent,
@@ -497,11 +499,15 @@ export function SettingsView() {
 
           {/* Bubble Style */}
           {captureMode === "confirm" && (
-            <SettingRow label={t("capture.bubbleStyle")}>
+            <SettingRow
+              label={t("capture.bubbleStyle")}
+              desc={bubbleStyle === "football" ? t("capture.footballDesc") : undefined}
+            >
               <div className="flex gap-1.5">
                 {([
                   { value: "circle", key: "capture.circle" },
                   { value: "bar", key: "capture.bar" },
+                  { value: "football", key: "capture.football" },
                 ] as const).map((opt) => (
                   <button
                     key={opt.value}
@@ -516,6 +522,13 @@ export function SettingsView() {
                   </button>
                 ))}
               </div>
+            </SettingRow>
+          )}
+
+          {/* Football sounds */}
+          {captureMode === "confirm" && bubbleStyle === "football" && (
+            <SettingRow label={t("capture.footballSound")} desc={t("capture.footballSoundDesc")}>
+              <ToggleSwitch checked={footballSound} onChange={setFootballSound} color="orange" />
             </SettingRow>
           )}
 

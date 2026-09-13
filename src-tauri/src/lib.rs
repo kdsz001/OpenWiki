@@ -68,6 +68,7 @@ pub fn run() {
             db,
             pending_capture: std::sync::Arc::new(std::sync::Mutex::new(None)),
             suppress_reopen_until: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            football_layout: std::sync::Arc::new(std::sync::Mutex::new(None)),
         })
         .setup(move |app| {
             eprintln!("[openwiki] App setup started");
@@ -232,6 +233,8 @@ pub fn run() {
             commands::capture::dismiss_capture,
             commands::capture::cleanup_pending_capture,
             commands::capture::get_pending_capture,
+            commands::capture::get_football_layout,
+            commands::capture::show_football_ball,
             capture::image_orphans::scan_image_orphans,
             capture::image_orphans::quarantine_image_orphans,
             capture::image_orphans::restore_quarantined_images,

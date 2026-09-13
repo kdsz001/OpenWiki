@@ -59,7 +59,20 @@
     "saveFailed": "Save failed",
     "retry": "Retry",
     "copyError": "Copy error",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "football": {
+      "tip": "Pull back, release to shoot",
+      "saved": "Saved · Goal #{{count}} today",
+      "nice": "Nice shot!",
+      "beauty": "Beauty!",
+      "goal": "Goal!",
+      "worldie": "Screamer!",
+      "banana": "Banana kick!",
+      "rocket": "Rocket!",
+      "tapIn": "Tap-in!",
+      "rebound": "Off the wall!",
+      "winner": "Last-second winner!"
+    }
   },
   "spotlight": {
     "addNotePlaceholder": "Add a note, press Enter to save...",

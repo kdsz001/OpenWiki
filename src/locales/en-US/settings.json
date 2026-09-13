@@ -32,6 +32,10 @@
     "bubbleStyle": "Bubble Style",
     "circle": "Circle",
     "bar": "Bar",
+    "football": "Football",
+    "footballDesc": "A ball appears next to your cursor: click to shoot and save, or pull it back to aim in any direction",
+    "footballSound": "Football sounds",
+    "footballSoundDesc": "Play sounds for kicks, rebounds and goals",
     "bubblePosition": "Bubble Position",
     "positions": {
       "bottom-right": "Bottom Right",

@@ -5,7 +5,8 @@
   "windows": [
     "main",
     "spotlight",
-    "bubble"
+    "bubble",
+    "football-field"
   ],
   "permissions": [
     "core:default",
@@ -20,6 +21,7 @@
     "core:window:allow-create",
     "core:window:allow-inner-size",
     "core:window:allow-scale-factor",
+    "core:window:allow-set-ignore-cursor-events",
     "core:event:default",
     "autostart:default",
     "autostart:allow-enable",

@@ -606,6 +606,214 @@ pub fn monitor_at_cursor(app: &AppHandle) -> Option<tauri::Monitor> {
         })
 }
 
+/// Window label of the full-screen, click-through layer that draws the football game.
+const FOOTBALL_FIELD_LABEL: &str = "football-field";
+/// Initial size of the football input window; the field moves it onto the ball.
+const FOOTBALL_BALL_WINDOW: f64 = 56.0;
+
+fn set_football_layout(app: &AppHandle, layout: Option<serde_json::Value>) {
+    let layout_arc = app.state::<AppState>().football_layout.clone();
+    if let Ok(mut guard) = layout_arc.lock() {
+        *guard = layout;
+    };
+}
+
+fn destroy_football_field(app: &AppHandle) {
+    if let Some(field) = app.get_webview_window(FOOTBALL_FIELD_LABEL) {
+        let _ = field.destroy();
+    }
+}
+
+/// Cursor position relative to `monitor`, in logical points
+/// (same coordinate quirks as `monitor_at_cursor`).
+fn cursor_in_monitor(app: &AppHandle, monitor: &tauri::Monitor) -> Option<(f64, f64)> {
+    let cursor = app.cursor_position().ok()?;
+    let scale = monitor.scale_factor();
+    #[cfg(target_os = "macos")]
+    {
+        let primary_scale = app
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.scale_factor())
+            .unwrap_or(1.0);
+        let origin = monitor.position().to_logical::<f64>(scale);
+        Some((cursor.x / primary_scale - origin.x, cursor.y / primary_scale - origin.y))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let origin = monitor.position();
+        Some((
+            (cursor.x - origin.x as f64) / scale,
+            (cursor.y - origin.y as f64) / scale,
+        ))
+    }
+}
+
+/// Football bubble style: a full-screen transparent field window (click-through)
+/// draws the ball, the goal and all animation, while the small hidden `bubble`
+/// window is placed on the ball to receive clicks and drags.
+/// Returns false if the windows could not be created.
+fn show_football_windows(app: &AppHandle, bubble_position: &str) -> bool {
+    use tauri::WebviewUrl;
+    use tauri::WebviewWindowBuilder;
+
+    let Some(monitor) = monitor_at_cursor(app) else {
+        log::warn!("Football bubble: no monitor found");
+        return false;
+    };
+    let scale = monitor.scale_factor();
+    let origin = monitor.position().to_logical::<f64>(scale);
+    let size = monitor.size().to_logical::<f64>(scale);
+    let work = monitor.work_area();
+    let work_pos = work.position.to_logical::<f64>(scale);
+    let work_size = work.size.to_logical::<f64>(scale);
+    // Tauri reports the macOS work area with the monitor's top edge, so split the
+    // missing height ourselves: menu bar on top (at most ~38pt), Dock below.
+    #[cfg(target_os = "macos")]
+    let work_y = (size.height - work_size.height).clamp(0.0, 38.0);
+    #[cfg(not(target_os = "macos"))]
+    let work_y = work_pos.y - origin.y;
+
+    let cursor = cursor_in_monitor(app, &monitor);
+    let side = if bubble_position.contains("left") { "left" } else { "right" };
+    let layout = serde_json::json!({
+        "width": size.width,
+        "height": size.height,
+        "originX": origin.x,
+        "originY": origin.y,
+        "work": {
+            "x": work_pos.x - origin.x,
+            "y": work_y,
+            "w": work_size.width,
+            "h": work_size.height,
+        },
+        "cursor": cursor.map(|(x, y)| serde_json::json!({ "x": x, "y": y })),
+        "side": side,
+    });
+    log::info!("Football layout: {}", layout);
+    set_football_layout(app, Some(layout));
+
+    // 1px shorter than the monitor so Windows doesn't treat it as a fullscreen app.
+    let field = match WebviewWindowBuilder::new(
+        app,
+        FOOTBALL_FIELD_LABEL,
+        WebviewUrl::App("/football-field".into()),
+    )
+    .title("")
+    .inner_size(size.width, size.height - 1.0)
+    .position(origin.x, origin.y)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .focused(false)
+    .build()
+    {
+        Ok(win) => win,
+        Err(e) => {
+            log::error!("Failed to create football field window: {}", e);
+            set_football_layout(app, None);
+            return false;
+        }
+    };
+    let _ = field.set_ignore_cursor_events(true);
+    let app_for_field = app.clone();
+    field.on_window_event(move |event| {
+        if let tauri::WindowEvent::Destroyed = event {
+            // Removing our last visible window can make macOS fire Reopen.
+            let suppress_arc = app_for_field.state::<AppState>().suppress_reopen_until.clone();
+            if let Ok(mut guard) = suppress_arc.lock() {
+                *guard = Some(Instant::now() + Duration::from_secs(2));
+            };
+        }
+    });
+
+    let ball = match WebviewWindowBuilder::new(app, "bubble", WebviewUrl::App("/bubble".into()))
+        .title("")
+        .inner_size(FOOTBALL_BALL_WINDOW, FOOTBALL_BALL_WINDOW)
+        .position(origin.x, origin.y)
+        .resizable(false)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .visible(false)
+        .focused(false)
+        .accept_first_mouse(true)
+        .build()
+    {
+        Ok(win) => win,
+        Err(e) => {
+            log::error!("Failed to create football ball window: {}", e);
+            let _ = field.destroy();
+            set_football_layout(app, None);
+            return false;
+        }
+    };
+    let app_for_ball = app.clone();
+    ball.on_window_event(move |event| match event {
+        tauri::WindowEvent::CloseRequested { .. } => {
+            let suppress_arc = app_for_ball.state::<AppState>().suppress_reopen_until.clone();
+            if let Ok(mut guard) = suppress_arc.lock() {
+                *guard = Some(Instant::now() + Duration::from_secs(2));
+            };
+        }
+        // The field belongs to this capture: never leave it behind.
+        tauri::WindowEvent::Destroyed => destroy_football_field(&app_for_ball),
+        _ => {}
+    });
+
+    #[cfg(target_os = "macos")]
+    {
+        suppress_reopen_temporarily(app, Duration::from_secs(5));
+        make_window_transparent(&field);
+        make_window_transparent(&ball);
+        show_bubble_without_focus(&field);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = field.show();
+    }
+    let _ = field.set_ignore_cursor_events(true);
+    log::info!("Football bubble windows created (side={})", side);
+    true
+}
+
+/// Moves the hidden football input window onto the ball (field coordinates) and
+/// shows it without stealing focus. Called by the field once the ball is drawn.
+pub fn show_football_ball_window(app: &AppHandle, x: f64, y: f64, size: f64) -> Result<(), String> {
+    let (origin_x, origin_y) = {
+        let layout_arc = app.state::<AppState>().football_layout.clone();
+        let guard = layout_arc.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let layout = guard.as_ref().ok_or("No football session")?;
+        (
+            layout.get("originX").and_then(|v| v.as_f64()).unwrap_or(0.0),
+            layout.get("originY").and_then(|v| v.as_f64()).unwrap_or(0.0),
+        )
+    };
+    let win = app
+        .get_webview_window("bubble")
+        .ok_or("Football ball window missing")?;
+    let size = size.clamp(24.0, 160.0);
+    win.set_size(tauri::LogicalSize::new(size, size))
+        .map_err(|e| e.to_string())?;
+    win.set_position(tauri::LogicalPosition::new(
+        origin_x + x - size / 2.0,
+        origin_y + y - size / 2.0,
+    ))
+    .map_err(|e| e.to_string())?;
+    #[cfg(target_os = "macos")]
+    show_bubble_without_focus(&win);
+    #[cfg(not(target_os = "macos"))]
+    win.show().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Dynamically create and show the bubble window at the bottom-right of the screen.
 /// If a bubble window already exists, close it first to avoid duplicates.
 fn show_bubble_window(app: &AppHandle) {
@@ -629,6 +837,8 @@ fn show_bubble_window(app: &AppHandle) {
         }
     }
 
+    destroy_football_field(app);
+
     // Read bubble style and position from settings
     let (bubble_style, bubble_position) = {
         let state = app.state::<AppState>();
@@ -646,7 +856,13 @@ fn show_bubble_window(app: &AppHandle) {
         (style, position)
     };
 
-    let is_circle = bubble_style == "circle";
+    if bubble_style == "football" && show_football_windows(app, &bubble_position) {
+        return;
+    }
+    set_football_layout(app, None);
+
+    // The football style falls back to the circle bubble if its windows can't be created.
+    let is_circle = bubble_style != "bar";
     // Circle mode: 64px height (48px circle + 16px padding for bounce animation).
     // Keep the collapsed circle window physically tight so transparent bounds
     // do not intercept clicks behind the visible 48px bubble.

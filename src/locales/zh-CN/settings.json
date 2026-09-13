@@ -32,6 +32,10 @@
     "bubbleStyle": "悬浮球样式",
     "circle": "圆形",
     "bar": "长条",
+    "football": "足球",
+    "footballDesc": "复制后鼠标旁会出现足球：点一下射门收藏，或按住拉开瞄准，360° 都能踢",
+    "footballSound": "足球音效",
+    "footballSoundDesc": "踢球、撞墙、进网时播放音效",
     "bubblePosition": "悬浮球位置",
     "positions": {
       "bottom-right": "右下",

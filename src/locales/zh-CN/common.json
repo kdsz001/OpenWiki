@@ -59,7 +59,20 @@
     "saveFailed": "保存失败",
     "retry": "重试",
     "copyError": "复制错误",
-    "dismiss": "忽略"
+    "dismiss": "忽略",
+    "football": {
+      "tip": "按住拉开，松手射门",
+      "saved": "已收藏 · 今日第 {{count}} 球",
+      "nice": "好球！",
+      "beauty": "漂亮！",
+      "goal": "进了！",
+      "worldie": "世界波！",
+      "banana": "香蕉球！",
+      "rocket": "暴力抽射！",
+      "tapIn": "推射破门！",
+      "rebound": "反弹破门！",
+      "winner": "绝杀！"
+    }
   },
   "spotlight": {
     "addNotePlaceholder": "添加备注，回车保存…",

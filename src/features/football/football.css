@@ -1,0 +1,167 @@
+/* Football bubble style: a full-screen click-through field window + a tiny input window on the ball. */
+
+.football-field {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.football-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.football-tip {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  background: #1c1917;
+  color: #fafaf8;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 7px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+  animation: football-fade-in 0.15s ease-out;
+}
+
+.football-tip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  width: 8px;
+  height: 8px;
+  background: #1c1917;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.football-pop-anchor {
+  position: absolute;
+  transform: translate(-50%, -100%);
+}
+
+.football-pop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.football-pop.is-showing {
+  animation: football-pop-in 0.5s ease-out forwards;
+}
+
+.football-pop.is-leaving {
+  animation: football-pop-out 0.26s ease-in forwards;
+}
+
+.football-pop b {
+  display: block;
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 1.1;
+  color: #f97316;
+  transform: rotate(-4deg);
+  white-space: nowrap;
+  text-shadow:
+    2px 0 0 #fff,
+    -2px 0 0 #fff,
+    0 2px 0 #fff,
+    0 -2px 0 #fff,
+    1.5px 1.5px 0 #fff,
+    -1.5px -1.5px 0 #fff,
+    1.5px -1.5px 0 #fff,
+    -1.5px 1.5px 0 #fff,
+    0 8px 20px rgba(28, 25, 23, 0.3);
+}
+
+.football-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  padding: 5px 11px 5px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  animation: football-pill-in 0.25s ease-out;
+}
+
+.football-pill.is-saved {
+  background: #16a34a;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35);
+}
+
+.football-pill.is-failed {
+  padding: 5px 11px;
+  background: #dc2626;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+}
+
+/* The whole 56×56 input window is the ball's hit area. */
+.football-hit {
+  position: fixed;
+  inset: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+
+.football-hit:active {
+  cursor: grabbing;
+}
+
+@keyframes football-pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.4);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.14);
+  }
+  75% {
+    opacity: 1;
+    transform: translateY(1px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes football-pop-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.95);
+  }
+}
+
+@keyframes football-pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes football-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}

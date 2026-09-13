@@ -26,6 +26,8 @@ pub struct AppState {
     pub pending_capture: Arc<Mutex<Option<serde_json::Value>>>,
     /// Temporarily suppresses macOS Reopen from pulling the main window forward.
     pub suppress_reopen_until: Arc<Mutex<Option<Instant>>>,
+    /// Screen layout for the football bubble style (None while the classic bubble is used).
+    pub football_layout: Arc<Mutex<Option<serde_json::Value>>>,
 }
 
 fn summary_char_count(text: &str) -> usize {
@@ -1565,6 +1567,28 @@ pub fn cleanup_pending_capture(image_path: Option<String>) -> Result<(), String>
         crate::capture::image_lifecycle::cleanup_pending_image(&path)?;
     }
     Ok(())
+}
+
+/// Layout for the football bubble: field window size, usable work area and the
+/// cursor position when the capture arrived (all in the field window's logical
+/// coordinates). Returns `None` while the classic bubble style is in use.
+#[tauri::command]
+pub fn get_football_layout(
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let layout = state
+        .football_layout
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?
+        .clone();
+    Ok(layout)
+}
+
+/// Called by the football field once the ball is drawn: moves the small input
+/// window onto the ball (field coordinates) and shows it without stealing focus.
+#[tauri::command]
+pub fn show_football_ball(app: tauri::AppHandle, x: f64, y: f64, size: f64) -> Result<(), String> {
+    crate::capture::detector::show_football_ball_window(&app, x, y, size)
 }
 
 /// Retry fetching URL content for a given content ID.
