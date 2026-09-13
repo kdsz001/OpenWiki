@@ -96,13 +96,14 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
     void winRef.current.close();
   }, []);
 
+  // dismiss_capture closes this window from the backend. Closing it again here raced with that
+  // teardown, so the window closes itself only when the call failed.
   const discard = useCallback(async () => {
     try {
       await invoke("dismiss_capture", { imagePath: pendingRef.current?.image_path ?? null });
     } catch {
-      // Cleanup is best effort; the window must still close.
+      close();
     }
-    close();
   }, [close]);
 
   /** After a successful save, close through the backend (dismiss_capture), the same way the classic bubble closes. */
@@ -110,9 +111,8 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
     try {
       await invoke("dismiss_capture", { imagePath: null });
     } catch {
-      // Already saved; closing is all that matters here.
+      close(); // Already saved; closing is all that matters here.
     }
-    close();
   }, [close]);
 
   const showFailureCard = useCallback(async () => {

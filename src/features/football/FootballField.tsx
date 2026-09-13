@@ -78,8 +78,13 @@ export default function FootballField() {
         },
         onShot: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.shot),
         onDone: (result: FootballResult) => {
-          // Tell the ball window how it ended, then remove the field.
-          void emitTo(BALL_LABEL, FOOTBALL_EVENTS.done, result).finally(() => void win.close());
+          // Tell the ball window how it ended, then get off screen. The backend destroys the
+          // field once the ball closes: destroying a webview that is still committing frames
+          // crashes WebKit. The delayed close is only a fallback if that never happens.
+          void emitTo(BALL_LABEL, FOOTBALL_EVENTS.done, result).finally(() => {
+            void win.hide();
+            window.setTimeout(() => void win.close(), 3000);
+          });
         },
         onSfx: (name, value) => {
           if (sound) void emitTo(BALL_LABEL, FOOTBALL_EVENTS.sfx, { name, value } satisfies SfxCue);

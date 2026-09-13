@@ -624,6 +624,32 @@ fn destroy_football_field(app: &AppHandle) {
     }
 }
 
+/// How long a finished football field stays hidden before it is destroyed.
+const FOOTBALL_TEARDOWN_DELAY: Duration = Duration::from_millis(600);
+
+/// Takes a finished field off screen now and destroys it a moment later. Destroying a
+/// webview that is still committing frames crashes WebKit on macOS (EXC_BAD_ACCESS in
+/// RemoteLayerTreeDrawingAreaProxy::commitLayerTree), so it is hidden first and only
+/// destroyed once it has gone quiet. The handle addresses this exact window, so a newer
+/// field with the same label is never touched.
+fn retire_football_field(field: &tauri::WebviewWindow) {
+    let _ = field.hide();
+    let field = field.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(FOOTBALL_TEARDOWN_DELAY);
+        let _ = field.destroy();
+    });
+}
+
+/// Waits (off the main thread) until a retiring field is gone, so a new football session
+/// never collides with the old window's label.
+fn wait_for_football_field_teardown(app: &AppHandle) {
+    let deadline = Instant::now() + FOOTBALL_TEARDOWN_DELAY + Duration::from_millis(600);
+    while app.get_webview_window(FOOTBALL_FIELD_LABEL).is_some() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 /// Cursor position relative to `monitor`, in logical points
 /// (same coordinate quirks as `monitor_at_cursor`).
 fn cursor_in_monitor(app: &AppHandle, monitor: &tauri::Monitor) -> Option<(f64, f64)> {
@@ -756,6 +782,7 @@ fn show_football_windows(app: &AppHandle, bubble_position: &str) -> bool {
         }
     };
     let app_for_ball = app.clone();
+    let field_for_ball = field.clone();
     ball.on_window_event(move |event| match event {
         tauri::WindowEvent::CloseRequested { .. } => {
             let suppress_arc = app_for_ball.state::<AppState>().suppress_reopen_until.clone();
@@ -764,7 +791,7 @@ fn show_football_windows(app: &AppHandle, bubble_position: &str) -> bool {
             };
         }
         // The field belongs to this capture: never leave it behind.
-        tauri::WindowEvent::Destroyed => destroy_football_field(&app_for_ball),
+        tauri::WindowEvent::Destroyed => retire_football_field(&field_for_ball),
         _ => {}
     });
 
@@ -1042,6 +1069,7 @@ impl CaptureDetector {
                         let app_bubble = app_for_clipboard.clone();
                         std::thread::spawn(move || {
                             std::thread::sleep(std::time::Duration::from_millis(150));
+                            wait_for_football_field_teardown(&app_bubble);
                             let app_main = app_bubble.clone();
                             let _ = app_bubble.run_on_main_thread(move || {
                                 show_bubble_window(&app_main);
