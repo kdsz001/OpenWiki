@@ -105,7 +105,7 @@ body.dragging,body.dragging *{cursor:grabbing!important;user-select:none}
     <div class="win-title">阅读器 — 随手记下的好句子，最后都去哪了？</div>
   </div>
   <div class="doc">
-    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球。<b>点一下</b>自动射门；<b>按住往任意方向拉</b>像拉弓一样，没有瞄准线，全凭手感：球往反方向射出，拉得越满越快越高；背对球门也能踢，会先撞屏幕边再反弹进门。松手射门（拉回原位再松手 = 取消）。Enter 直接射门，Esc 放弃；5 秒不理它就自动丢弃（拉弓时倒计时暂停）。</div>
+    <div class="howto"><b>怎么玩：</b>点顶部「模拟一次复制」，或者在下面文章里选中一段文字按 <b>⌘C</b>（Windows 是 Ctrl+C）。鼠标旁边会冒出一个足球。<b>点一下</b>自动射门；<b>按住往任意方向拉</b>像拉弓一样，没有瞄准线，全凭手感：球往反方向射出，拉得越满越快越高；背对球门也能踢，会像台球一样撞屏幕边弹 1～2 次再进门。松手射门（拉回原位再松手 = 取消）。Enter 直接射门，Esc 放弃；5 秒不理它就自动丢弃（拉弓时倒计时暂停）。</div>
     <h1>随手记下的好句子，最后都去哪了？</h1>
     <div class="by">示例文章 · 用来模拟你平时在看的网页</div>
     <p>很多人都有这样的习惯：看到一句打动自己的话，顺手复制下来，想着"以后用得上"。可过了一周再回头找，它早就淹没在聊天记录、备忘录和几十个浏览器标签页里了。</p>
@@ -563,7 +563,7 @@ function startCapture(anchor) {
   const s = {
     phase: 'appear', t: 0, anchor, rand: Math.random(), rand2: Math.random(), rand3: Math.random(),
     remaining: COUNTDOWN, hover: false, hoverA: 0, trail: [], bulge: 0, bulgeV: 0, wob: 0, wobV: 0,
-    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false, drag: null, snap: null, shot: null, pre: null, squash: null,
+    fade: 1, shake: 0, rise: 0, inside: false, lastSecond: false, drag: null, snap: null, shot: null, pres: [], squash: null,
     net: { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 },
   };
   press = null; document.body.classList.remove('dragging'); hideTip();
@@ -580,7 +580,7 @@ function placeHit(s) {
 }
 function kick() {
   const s = S.session; if (!s || (s.phase !== 'wait' && s.phase !== 'appear')) return;
-  s.lastSecond = s.remaining <= 1.05; s.shot = s.autoShot; s.drag = null; s.snap = null; s.pre = null; s.squash = null;
+  s.lastSecond = s.remaining <= 1.05; s.shot = s.autoShot; s.drag = null; s.snap = null; s.pres = []; s.squash = null;
   s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none'; hideTip();
   const b = s.ball;
   Object.assign(b, { x: s.rest.x, y: s.rest.y, r: s.r0, a: 1, dir: Math.atan2(s.path.c.y - s.rest.y, s.path.c.x - s.rest.x) });
@@ -672,21 +672,109 @@ function wallHit(s, p, d) { // 从 p 沿 d 飞，最先撞到屏幕哪条边、�
   const n = tx < ty ? { x: d.x > 0 ? -1 : 1, y: 0 } : { x: 0, y: d.y > 0 ? -1 : 1 };
   return { from: q, at: { x: q.x + d.x * t, y: q.y + d.y * t }, n, dist: t };
 }
+// ── 台球反弹：出球方向基本照你拉的（最多偏 6° 左右），撞墙角度悄悄修正几度，弹 1～2 次正好进门 ──
+// 从所有能进门的路线里挑"修正得最少"的；怎么修都太假，就退回"弹一次再弧线拐进门"
+const DEG = Math.PI / 180;
+const POOL = { bend: 16 * DEG, launchWeight: 2.5, graze: Math.sin(12 * DEG), twoBias: 1.5 * DEG, corner: 14, minLast: 90,
+  speed: 1500, speedPerPower: 1500, keep: 0.85, maxDur: 1.5 };
+const rotate = (d, a) => ({ x: d.x * Math.cos(a) - d.y * Math.sin(a), y: d.x * Math.sin(a) + d.y * Math.cos(a) });
+const reflect = (d, n) => { const k = d.x * n.x + d.y * n.y; return { x: d.x - 2 * k * n.x, y: d.y - 2 * k * n.y }; };
+const unit = (a, b) => { const l = Math.hypot(b.x - a.x, b.y - a.y) || 1; return { x: (b.x - a.x) / l, y: (b.y - a.y) / l, l }; };
+function tableOf(s) { // 球心能到的范围：球的边碰到屏幕边就算撞墙（原型里顶部控制栏当菜单栏）
+  const m = s.r0;
+  return { x0: m, x1: W - m, y0: $('#bar').getBoundingClientRect().bottom + 8 + m, y1: H - m };
+}
+function rayToWall(p, d, B) { // 从 p 沿 d 直线飞，撞到哪条边、撞在哪；贴着角撞的标出来
+  const tx = d.x > 1e-9 ? (B.x1 - p.x) / d.x : d.x < -1e-9 ? (B.x0 - p.x) / d.x : Infinity;
+  const ty = d.y > 1e-9 ? (B.y1 - p.y) / d.y : d.y < -1e-9 ? (B.y0 - p.y) / d.y : Infinity;
+  const t = Math.max(0, Math.min(tx, ty)), at = { x: p.x + d.x * t, y: p.y + d.y * t };
+  const corner = Math.min(Math.abs(at.x - B.x0), Math.abs(at.x - B.x1)) < POOL.corner
+    && Math.min(Math.abs(at.y - B.y0), Math.abs(at.y - B.y1)) < POOL.corner;
+  return { at, t, corner, n: tx < ty ? { x: d.x > 0 ? -1 : 1, y: 0 } : { x: 0, y: d.y > 0 ? -1 : 1 } };
+}
+function segmentHitsBox(a, b, box) { // 线段是否穿过矩形
+  let t0 = 0, t1 = 1;
+  const dx = b.x - a.x, dy = b.y - a.y;
+  for (const [pp, qq] of [[-dx, a.x - box.x0], [dx, box.x1 - a.x], [-dy, a.y - box.y0], [dy, box.y1 - a.y]]) {
+    if (Math.abs(pp) < 1e-9) { if (qq < 0) return false; continue; }
+    const t = qq / pp;
+    if (pp < 0) { if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return t0 <= t1;
+}
+function landingAt(s, u, power, dv = 0) { // 网上的落点：左右由 u 决定，高低主要看力度（反弹球允许上下浮动一点）
+  const F = s.front, rEnd = s.r0 * 0.56, hh = (F.by1 - F.by0) / 2;
+  const x = clamp(lerp(F.bx0, F.bx1, u), F.bx0 + rEnd + 2, F.bx1 - rEnd - 2);
+  const y = clamp((F.by0 + F.by1) / 2 + (lerp(0.55, -0.75, power) + dv) * hh, F.by0 + rEnd + 1, F.by1 - rEnd - 1);
+  return { P: { x, y }, u: (x - F.bx0) / (F.bx1 - F.bx0), v: (y - F.by0) / (F.by1 - F.by0) };
+}
+function lastLegOk(a, P) { // 进门那段要够长，而且从球门前方或上方钻进去，不能从门后、门底下绕进来
+  const o = unit(a, P);
+  return o.l >= POOL.minLast && o.x >= -0.25 && o.y >= -0.35;
+}
+function billiardsPlan(s, p0, d, power) {
+  const B = tableOf(s), F = s.front, start = { x: clamp(p0.x, B.x0, B.x1), y: clamp(p0.y, B.y0, B.y1) };
+  const box = { x0: F.x0 - 12, x1: F.x1 + 12, y0: F.y0 - 12, y1: F.y1 + 12 };
+  const spots = [];
+  for (let i = 0; i < 8; i++) for (const dv of [-0.3, 0, 0.3]) spots.push(landingAt(s, 0.15 + 0.1 * i, power, dv));
+  const phs = [0];
+  for (let i = 1; i <= Math.floor(POOL.bend / POOL.launchWeight / DEG); i++) phs.push(i * DEG, -i * DEG); // 先试不偏，再慢慢往两边偏
+  let best = null;
+  for (const ph of phs) {
+    const bend0 = Math.abs(ph) * POOL.launchWeight; // 出球方向偏一点比撞墙角度偏一点显眼，所以加倍算
+    if (best && bend0 >= best.score) break;
+    const dl = rotate(d, ph), h1 = rayToWall(start, dl, B);
+    if (h1.corner || h1.t < 1) continue;
+    const r1 = reflect(dl, h1.n);
+    for (const L of spots) {
+      const o = unit(h1.at, L.P), bend1 = Math.abs(signedAngle(r1.x, r1.y, o.x, o.y)), one = Math.max(bend0, bend1);
+      if (bend1 <= POOL.bend && (!best || one < best.score) && o.x * h1.n.x + o.y * h1.n.y >= POOL.graze && lastLegOk(h1.at, L.P))
+        best = { score: one, L, start, hits: [h1] };
+      for (let th = -POOL.bend; th <= POOL.bend + 1e-9; th += DEG) { // 弹两次：第一下偏 th，第二下偏多少算出来
+        if (best && Math.max(bend0, Math.abs(th)) + POOL.twoBias >= best.score) continue;
+        const o1 = rotate(r1, th);
+        if (o1.x * h1.n.x + o1.y * h1.n.y < POOL.graze) continue;
+        const h2 = rayToWall(h1.at, o1, B);
+        if (h2.corner || h2.t < 1 || segmentHitsBox(h1.at, h2.at, box)) continue; // 弹的途中不能先穿过球门
+        const o2 = unit(h2.at, L.P), r2 = reflect(o1, h2.n), bend2 = Math.abs(signedAngle(r2.x, r2.y, o2.x, o2.y));
+        const two = Math.max(bend0, Math.abs(th), bend2) + POOL.twoBias;
+        if (bend2 > POOL.bend || (best && two >= best.score) || o2.x * h2.n.x + o2.y * h2.n.y < POOL.graze || !lastLegOk(h2.at, L.P)) continue;
+        best = { score: two, L, start, hits: [h1, h2] };
+      }
+    }
+  }
+  if (!best) return null;
+  const speed = POOL.speed + POOL.speedPerPower * power, pts = [best.start, ...best.hits.map((h) => h.at), best.L.P];
+  const pres = best.hits.map((h, i) => ({ p0: pts[i], c: Q(pts[i], pts[i + 1], 0.5), p2: pts[i + 1], n: h.n,
+    dur: Math.max(0.05, unit(pts[i], pts[i + 1]).l / (speed * POOL.keep ** i)) })); // 每撞一次掉点速
+  const a = pts[pts.length - 2], P = best.L.P;
+  const path = { p0: a, c: Q(a, P, 0.5), p2: P, // 进门这段先快后慢，起速接上撞墙后的速度
+    dur: Math.max(0.28, 1.5 * unit(a, P).l / (speed * POOL.keep ** pres.length)) };
+  const total = path.dur + pres.reduce((sum, q) => sum + q.dur, 0);
+  if (total > POOL.maxDur) { const f = POOL.maxDur / total; pres.forEach((q) => { q.dur *= f; }); path.dur *= f; } // 飞太远就整体提速
+  return { k: clamp((0.5 - best.L.u) * 2, -1, 1), u: best.L.u, v: best.L.v, rebound: true, bounces: pres.length, pres, path,
+    bend: best.score };
+}
 function planShot(s, p0, d, power) { // 松手那一刻决定整条飞行路线
   const T = targetCenter(s);
   let tx = T.x - p0.x, ty = T.y - p0.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
   const delta = signedAngle(tx, ty, d.x, d.y);
   if (Math.abs(delta) <= AIM.direct) { // 大致朝着球门：直接打门（偏得多就是香蕉球）
     const k = clamp(delta / AIM.spread, -1, 1), L = landing(s, k, power);
-    return { k, ...L, rebound: false, pre: null, path: pathFrom(s, p0, L.P, power, d) };
+    return { k, ...L, rebound: false, bounces: 0, pres: [], path: pathFrom(s, p0, L.P, power, d) };
   }
-  // 背对球门：先直直飞到屏幕边，按"入射角 = 反射角"弹回来，再弯进球门
+  // 背对球门：优先走台球路线（直线飞、撞边按入射角 = 反射角弹开，弹 1～2 次正好进门）
+  if (S.target === 'goal') {
+    const plan = billiardsPlan(s, p0, d, power);
+    if (plan) return plan;
+  }
+  // 找不到够接近的台球路线：退回"弹一次再弧线拐进门"，保证一定进
   const w = wallHit(s, p0, d), dn = d.x * w.n.x + d.y * w.n.y, r = { x: d.x - 2 * dn * w.n.x, y: d.y - 2 * dn * w.n.y };
   let ux = T.x - w.at.x, uy = T.y - w.at.y; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
   const k = clamp(signedAngle(ux, uy, r.x, r.y) / AIM.spread, -1, 1), L = landing(s, k, power);
   const pre = { p0: w.from, c: { x: (w.from.x + w.at.x) / 2, y: (w.from.y + w.at.y) / 2 }, p2: w.at, n: w.n,
     dur: clamp(w.dist / (1500 + 1500 * power), 0.06, 0.6) };
-  return { k, ...L, rebound: true, pre, path: pathFrom(s, w.at, L.P, power * 0.8, r) };
+  return { k, ...L, rebound: true, bounces: 1, pres: [pre], path: pathFrom(s, w.at, L.P, power * 0.8, r) };
 }
 function pathFrom(s, p0, P, power, d) { // 控制点放在出球方向上：球先沿这个方向飞，再弯进落点
   const dist = Math.hypot(P.x - p0.x, P.y - p0.y) || 1, ang0 = Math.atan2(P.y - p0.y, P.x - p0.x);
@@ -712,8 +800,8 @@ function updateDrag(s, px, py) {
 }
 function launch(s) { // 松手：往拉的反方向射出；背对球门就先撞墙反弹（落点不提前告诉你）
   const D = s.drag, b = s.ball, d = { x: -D.ux, y: -D.uy }, plan = planShot(s, { x: D.x, y: D.y }, d, D.power);
-  s.shot = { k: plan.k, u: plan.u, v: plan.v, power: D.power, aimed: true, rebound: plan.rebound };
-  s.path = plan.path; s.pre = plan.pre; s.squash = null; s.rEnd = S.target === 'goal' ? s.r0 * 0.56 : s.r0 * 0.8;
+  s.shot = { k: plan.k, u: plan.u, v: plan.v, power: D.power, aimed: true, rebound: plan.rebound, bounces: plan.bounces };
+  s.path = plan.path; s.pres = plan.pres; s.squash = null; s.rEnd = S.target === 'goal' ? s.r0 * 0.56 : s.r0 * 0.8;
   s.drag = null; s.snap = null; S.learned = true;
   s.lastSecond = s.remaining <= 1.05;
   s.phase = 'kick'; s.t = 0; s.rise = 0; hit.style.display = 'none'; hideTip();
@@ -730,7 +818,7 @@ function cancelDrag(s) { // 取消：球弹回原位，倒计时继续
 function shotLabel(s) { // 按射门方式给不同的喝彩
   if (s.lastSecond && S.target === 'goal') return '绝杀！';
   const sh = s.shot, list = CHEERS[S.target];
-  if (sh && sh.rebound) return S.target === 'goal' ? '反弹破门！' : '反弹进桶！';
+  if (sh && sh.rebound) return S.target === 'goal' ? (sh.bounces >= 2 ? '两库破门！' : '反弹破门！') : '反弹进桶！';
   if (S.target === 'goal' && sh) {
     if (sh.v < 0.32 && Math.abs(sh.u - 0.5) > 0.28) return '世界波！';
     if (sh.aimed && Math.abs(sh.k) > 0.65) return '香蕉球！';
@@ -845,18 +933,23 @@ function update(dt) {
     case 'kick': { // 触球瞬间：球被踢扁一下
       const k = clamp(s.t / 0.07, 0, 1), q = Math.sin(Math.PI * k);
       b.sx = 1 - 0.2 * q; b.sy = 1 + 0.24 * q;
-      if (k >= 1) { s.phase = 'fly'; s.t = 0; b.sx = b.sy = 1; SFX.whoosh(s.path.dur + (s.pre ? s.pre.dur : 0)); }
+      if (k >= 1) { s.phase = 'fly'; s.t = 0; b.sx = b.sy = 1; SFX.whoosh(s.path.dur + s.pres.reduce((sum, q) => sum + q.dur, 0)); }
       break;
     }
     case 'fly': {
       s.trail.push({ x: b.x, y: b.y, r: b.r }); if (s.trail.length > (S.field === 'screen' ? 9 : 7)) s.trail.shift();
       b.rot += dt * (S.target === 'goal' ? 22 : 13);
-      if (s.pre) { // 反弹球：先直直飞到屏幕边
-        const q = s.pre, tq = clamp(s.t / q.dur, 0, 1), pq = bez(q.p0, q.c, q.p2, tq);
+      if (s.pres.length) { // 反弹球：一段段直线飞到屏幕边
+        const q = s.pres[0], tq = clamp(s.t / q.dur, 0, 1), pq = bez(q.p0, q.c, q.p2, tq);
         if (Math.hypot(pq.x - b.x, pq.y - b.y) > 0.01) b.dir = Math.atan2(pq.y - b.y, pq.x - b.x);
         b.x = pq.x; b.y = pq.y; b.r = s.r0; b.sx = 1.14; b.sy = 1 / 1.14;
+        if (s.squash) { // 刚撞完上一面墙：先压扁一下
+          s.squash.t += dt; const kq = clamp(s.squash.t / 0.09, 0, 1), sq = Math.sin(Math.PI * kq);
+          b.dir = s.squash.dir; b.sx = 1 - 0.28 * sq; b.sy = 1 + 0.2 * sq;
+          if (kq >= 1) s.squash = null;
+        }
         if (tq >= 1) { // 撞墙：定格一下、压扁、"咚"、溅起碎屑，再按反射方向弹走
-          s.pre = null; s.t = 0; S.freeze = 0.035; s.squash = { t: 0, dir: Math.atan2(q.n.y, q.n.x) };
+          s.pres.shift(); s.t = 0; S.freeze = 0.035; s.squash = { t: 0, dir: Math.atan2(q.n.y, q.n.x) };
           SFX.wall(s.shot ? s.shot.power : 0.6);
           ring(b.x, b.y, s.r0 * 0.9, '#FAFAF8');
           burstN(b.x, b.y, q.n.x, q.n.y, 10, ['#F97316', '#FDBA74', '#FAFAF8'], 0.8);
