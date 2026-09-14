@@ -72,7 +72,9 @@
       "tapIn": "推射破门！",
       "rebound": "反弹破门！",
       "doubleRebound": "两库破门！",
-      "winner": "绝杀！"
+      "tripleRebound": "三库破门！",
+      "winner": "绝杀！",
+      "missed": "没进 · 不收藏"
     }
   },
   "spotlight": {

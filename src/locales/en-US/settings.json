@@ -33,7 +33,7 @@
     "circle": "Circle",
     "bar": "Bar",
     "football": "Football",
-    "footballDesc": "A ball appears next to your cursor: click to shoot and save, or pull it back to aim in any direction",
+    "footballDesc": "A ball appears next to your cursor: click to shoot, or pull it back to aim — only a goal saves it",
     "footballSound": "Football sounds",
     "footballSoundDesc": "Play sounds for kicks, rebounds and goals",
     "footballGoalSize": "Goal size",

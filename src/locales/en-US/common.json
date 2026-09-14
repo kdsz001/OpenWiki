@@ -72,7 +72,9 @@
       "tapIn": "Tap-in!",
       "rebound": "Off the wall!",
       "doubleRebound": "Off two walls!",
-      "winner": "Last-second winner!"
+      "tripleRebound": "Off three walls!",
+      "winner": "Last-second winner!",
+      "missed": "Missed · not saved"
     }
   },
   "spotlight": {

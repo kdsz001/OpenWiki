@@ -102,6 +102,27 @@
   box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
 }
 
+/* A missed shot: a calm gray note instead of a cheer. */
+.football-miss {
+  font-size: 12px;
+  font-weight: 600;
+  color: #57534e;
+  background: #f5f5f0;
+  border: 1px solid #e7e5e4;
+  padding: 5px 11px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(28, 25, 23, 0.12);
+}
+
+.football-miss.is-showing {
+  animation: football-pill-in 0.3s ease-out forwards;
+}
+
+.football-miss.is-leaving {
+  animation: football-pop-out 0.26s ease-in forwards;
+}
+
 /* The whole 56×56 input window is the ball's hit area. */
 .football-hit {
   position: fixed;

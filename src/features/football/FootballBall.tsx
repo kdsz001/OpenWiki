@@ -24,7 +24,7 @@ interface PendingCapture {
   image_path: string | null;
 }
 
-type Stage = "aiming" | "saving" | "saved" | "failed";
+type Stage = "aiming" | "saving" | "saved" | "failed" | "missed";
 
 const CARD_W = 320;
 const CARD_H = 140;
@@ -73,7 +73,7 @@ async function saveCapture(capture: PendingCapture): Promise<string | null> {
 /**
  * The football bubble's input window (label "bubble"). It sits invisibly on the
  * ball, forwards clicks and drags to the field window, saves the capture as soon
- * as the ball is kicked and plays the sounds (only this window gets the user
+ * as the ball is kicked into the goal and plays the sounds (only this window gets the user
  * gesture that audio needs). If saving fails it becomes the retry card.
  */
 export default function FootballBall({ layout }: { layout: FootballLayout }) {
@@ -204,6 +204,11 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
         // The ball is flying now: stop catching clicks meant for the app underneath.
         void win.setIgnoreCursorEvents(true);
         void save();
+      }),
+      win.listen(FOOTBALL_EVENTS.miss, () => {
+        // Kicked wide: nothing to save. Stop catching clicks; "done" then dismisses the capture.
+        stageRef.current = "missed";
+        void win.setIgnoreCursorEvents(true);
       }),
       win.listen<FootballResult>(FOOTBALL_EVENTS.done, (e) => {
         doneRef.current = e.payload;

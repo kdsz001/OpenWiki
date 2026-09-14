@@ -21,7 +21,7 @@ export interface PointerInput {
   buttons: number;
 }
 
-export type SfxName = "grab" | "tick" | "full" | "twang" | "kick" | "whoosh" | "wall" | "goal" | "boing";
+export type SfxName = "grab" | "tick" | "full" | "twang" | "kick" | "whoosh" | "wall" | "goal" | "boing" | "poof";
 
 export interface SfxCue {
   name: SfxName;
@@ -47,8 +47,10 @@ export const FOOTBALL_EVENTS = {
   saved: "football:saved",
   /** ball → field: saving failed */
   failed: "football:failed",
-  /** field → ball: the ball was kicked, save now */
+  /** field → ball: the ball was kicked into the goal, save now */
   shot: "football:shot",
+  /** field → ball: the ball was kicked but will not go in; stop taking input, nothing is saved */
+  miss: "football:miss",
   /** field → ball: animation finished (payload: FootballResult) */
   done: "football:done",
   /** field → ball: play a sound (only the ball window gets the user gesture audio needs) */

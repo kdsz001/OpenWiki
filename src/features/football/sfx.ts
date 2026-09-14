@@ -92,7 +92,7 @@ function noise(
   src.stop(t + attack + decay + 0.05);
 }
 
-/** `value` means power (0–1) for shots, duration for the whoosh, step (1–7) for ticks. */
+/** `value` means power (0–1) for shots, impact (0–1) for wall hits, duration for the whoosh, step (1–7) for ticks. */
 export function playSfx(name: SfxName, value = 0.6) {
   const a = getAudio();
   if (!a) return;
@@ -118,6 +118,10 @@ export function playSfx(name: SfxName, value = 0.6) {
     case "wall": // bouncing off the screen edge
       tone(a, "sine", 190, 85, t, 0.45 + 0.25 * value, 0.003, 0.11);
       noise(a, t, "bandpass", 950, 1.1, 0.3 + 0.15 * value, 0.002, 0.06);
+      break;
+    case "poof": // a missed ball deflating
+      noise(a, t, "lowpass", 1100, 0.7, 0.24, 0.008, 0.24, 160);
+      tone(a, "sine", 260, 90, t, 0.12, 0.005, 0.2);
       break;
     case "grab":
       tone(a, "sine", 480, 360, t, 0.12, 0.003, 0.06);

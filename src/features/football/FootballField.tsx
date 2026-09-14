@@ -38,6 +38,8 @@ export default function FootballField() {
   const [tip, setTip] = useState<Point | null>(null);
   const [pop, setPop] = useState<Pop | null>(null);
   const [popLeaving, setPopLeaving] = useState(false);
+  const [missNote, setMissNote] = useState<Point | null>(null);
+  const [missLeaving, setMissLeaving] = useState(false);
   const [save, setSave] = useState<SaveState>({ kind: "pending" });
 
   useEffect(() => {
@@ -73,6 +75,7 @@ export default function FootballField() {
           tapIn: t("bubble.football.tapIn"),
           rebound: t("bubble.football.rebound"),
           doubleRebound: t("bubble.football.doubleRebound"),
+          tripleRebound: t("bubble.football.tripleRebound"),
           winner: t("bubble.football.winner"),
         },
         onBallReady: (x, y) => {
@@ -81,6 +84,7 @@ export default function FootballField() {
           );
         },
         onShot: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.shot),
+        onMiss: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.miss),
         onDone: (result: FootballResult) => {
           // Tell the ball window how it ended, then get off screen. The backend destroys the
           // field once the ball closes: destroying a webview that is still committing frames
@@ -102,6 +106,11 @@ export default function FootballField() {
           setPop({ cheer, x, y });
         },
         onPopHide: () => setPopLeaving(true),
+        onMissNote: (x, y) => {
+          setMissLeaving(false);
+          setMissNote({ x, y });
+        },
+        onMissNoteHide: () => setMissLeaving(true),
       });
       const listeners = await Promise.all([
         win.listen<PointerInput>(FOOTBALL_EVENTS.input, (e) => game.input(e.payload)),
@@ -159,6 +168,11 @@ export default function FootballField() {
               <span className="football-pill is-failed">{t("bubble.saveFailed")}</span>
             )}
           </div>
+        </div>
+      )}
+      {missNote && (
+        <div className="football-pop-anchor" style={{ left: missNote.x, top: missNote.y }}>
+          <div className={`football-miss ${missLeaving ? "is-leaving" : "is-showing"}`}>{t("bubble.football.missed")}</div>
         </div>
       )}
     </div>
