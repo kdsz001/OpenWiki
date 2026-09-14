@@ -1,6 +1,7 @@
 pub mod clipboard;
 pub mod content;
 pub mod detector;
+pub mod fragments;
 pub mod image_lifecycle;
 pub mod image_orphans;
 pub mod ocr;

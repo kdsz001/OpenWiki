@@ -2,7 +2,7 @@ use super::clipboard::ClipboardWatcher;
 use super::screenshot::ScreenshotWatcher;
 use super::sensitive_filter::contains_sensitive_data;
 use super::url_reader::UrlReader;
-use crate::commands::capture::{save_content_auto, AppState};
+use crate::commands::capture::{save_clipboard_content, AppState};
 use crate::storage::database::Database;
 use crate::storage::models::CaptureEvent;
 use crate::storage::repository::Repository;
@@ -270,7 +270,7 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
             .map(|s| s.to_string()),
     };
 
-    match save_content_auto(&db, event) {
+    match save_clipboard_content(app, &db, event) {
         Ok(content) => {
             log::info!(
                 "Auto-saved: {} (type={}, source_url={:?})",

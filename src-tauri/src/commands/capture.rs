@@ -668,6 +668,59 @@ pub fn save_content_auto(
     save_content_auto_in(db, event, None)
 }
 
+/// How far back a new copy looks for pieces of the same passage.
+const FRAGMENT_WINDOW_SECS: i64 = 180;
+
+/// Saves a copy from the clipboard like `save_content_auto`, but folds overlapping pieces of the
+/// same passage from the same app together, so re-selecting a sentence a few times keeps only the
+/// most complete copy. A new piece of something saved moments ago just moves that item to the top
+/// (reported as a duplicate); a new, fuller copy replaces the pieces saved before it.
+pub fn save_clipboard_content(
+    app: &tauri::AppHandle,
+    db: &Arc<Database>,
+    event: CaptureEvent,
+) -> Result<CapturedContent, String> {
+    use crate::capture::fragments::is_fragment_of;
+
+    let text = match event.raw_text.as_deref() {
+        Some(text) if event.content_type != "image" && event.content_type != "url" && detect_url(text).is_none() => {
+            text.to_string()
+        }
+        _ => return save_content_auto(db, event),
+    };
+    let repo = crate::storage::repository::Repository::new(db.clone());
+    let since = (Utc::now() - chrono::Duration::seconds(FRAGMENT_WINDOW_SECS)).to_rfc3339();
+    let recent = repo
+        .recent_texts_from_source(&event.source_app, &since)
+        .unwrap_or_default();
+    if let Some((id, _)) = recent.iter().find(|(_, saved)| is_fragment_of(&text, saved)) {
+        let _ = repo.touch_captured_at(id);
+        log::info!("Copy is a piece of recent capture {}, kept the fuller one", id);
+        return Err("Duplicate content".to_string());
+    }
+
+    let content = save_content_auto(db, event)?;
+    let removed: Vec<String> = recent
+        .into_iter()
+        .filter(|(_, saved)| is_fragment_of(saved, &text))
+        .filter_map(|(id, _)| match repo.delete_content(&id) {
+            Ok(()) => Some(id),
+            Err(e) => {
+                log::warn!("Failed to fold fragment {} into the new copy: {}", id, e);
+                None
+            }
+        })
+        .collect();
+    if !removed.is_empty() {
+        log::info!("Folded {} fragment(s) into {}", removed.len(), content.id);
+        let _ = app.emit(
+            "content:merged",
+            serde_json::json!({ "kept": content.id, "removed": removed }),
+        );
+    }
+    Ok(content)
+}
+
 fn save_content_auto_in(
     db: &Arc<Database>,
     event: CaptureEvent,
@@ -1458,7 +1511,7 @@ pub fn confirm_capture(
         raw_text,
         image_path,
     };
-    let mut content = match save_content_auto(&state.db, event) {
+    let mut content = match save_clipboard_content(&app, &state.db, event) {
         Ok(c) => c,
         Err(e) if e.contains("Duplicate content") => {
             // Content was moved to top, emit refresh event

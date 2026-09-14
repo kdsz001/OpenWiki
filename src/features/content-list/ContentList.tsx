@@ -797,6 +797,15 @@ export function ContentList() {
     return () => { unlisten.then((fn) => fn()); };
   }, [reloadSingleItem]);
 
+  useEffect(() => {
+    // Overlapping copies of one passage were folded into a single item: drop the pieces.
+    const unlisten = listen<{ removed: string[] }>(
+      "content:merged",
+      (event) => { event.payload.removed.forEach((id) => useContentStore.getState().removeContent(id)); }
+    );
+    return () => { unlisten.then((fn) => fn()); };
+  }, []);
+
   // Handle scroll-to-item when scrollToId changes
   useEffect(() => {
     if (!scrollToId) return;

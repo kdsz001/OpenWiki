@@ -355,6 +355,29 @@ impl Repository {
         Ok(())
     }
 
+    /// Text captures from one app since `since` (RFC 3339), newest first, as (id, text).
+    pub fn recent_texts_from_source(
+        &self,
+        source_app: &str,
+        since: &str,
+    ) -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| format!("Lock error: {}", e))?;
+        let mut stmt = conn.prepare(
+            "SELECT id, raw_text FROM captured_content
+             WHERE is_deleted = 0 AND content_type = 'text' AND raw_text IS NOT NULL
+               AND source_app = ?1 AND captured_at >= ?2
+             ORDER BY captured_at DESC LIMIT 50",
+        )?;
+        let rows = stmt.query_map(params![source_app, since], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
     /// Update the AI-generated summary, tags, digest, and category for a content item.
     /// An empty category keeps whatever category the item already has.
     pub fn update_summary_and_tags(
