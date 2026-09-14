@@ -8,6 +8,7 @@ import { RadarView } from "./features/digest/RadarView";
 import { WikiView } from "./features/wiki/WikiView";
 import { WikiPageDetail } from "./features/wiki/WikiPageDetail";
 import { UpdateBanner } from "./features/update/UpdateBanner";
+import { WhatsNewDialog } from "./features/whats-new/WhatsNewDialog";
 import { PreAuthModal } from "./features/automation/PreAuthModal";
 import { AutomationNotices } from "./features/automation/AutomationNotices";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -348,6 +349,9 @@ function App() {
 
       {/* Update available — shown when backend emits `update-available` on startup */}
       <UpdateBanner />
+
+      {/* One-time card after an update that brings a new feature */}
+      <WhatsNewDialog />
 
       {/* Automation permission denial banner + grant/dismiss toasts */}
       <AutomationNotices />

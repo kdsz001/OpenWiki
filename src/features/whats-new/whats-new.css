@@ -1,0 +1,156 @@
+/* One-time "what's new" card: entrance, and the labels drawn over the football demo stage. */
+
+.whats-new-dialog {
+  animation: whats-new-enter 0.2s ease-out;
+}
+
+.whats-new-toast {
+  animation: whats-new-toast-in 0.2s ease-out;
+}
+
+.whats-new-keycap {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  padding: calc(4px * var(--s, 1)) calc(7px * var(--s, 1));
+  border-radius: 6px;
+  font: 600 calc(11px * var(--s, 1)) / 1 "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--color-text-primary);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.12);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.whats-new-keycap.is-on {
+  animation: whats-new-label-in 0.2s ease-out forwards;
+}
+
+.whats-new-cheer {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(4px * var(--s, 1));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.whats-new-cheer b {
+  display: block;
+  font-weight: 800;
+  font-size: calc(19px * var(--s, 1));
+  line-height: 1.1;
+  color: #f97316;
+  transform: rotate(-4deg);
+  white-space: nowrap;
+  text-shadow:
+    1.5px 0 0 #fff,
+    -1.5px 0 0 #fff,
+    0 1.5px 0 #fff,
+    0 -1.5px 0 #fff,
+    1px 1px 0 #fff,
+    -1px -1px 0 #fff,
+    1px -1px 0 #fff,
+    -1px 1px 0 #fff,
+    0 6px 14px rgba(28, 25, 23, 0.3);
+}
+
+.whats-new-cheer span {
+  display: flex;
+  align-items: center;
+  gap: calc(3px * var(--s, 1));
+  font-size: calc(11px * var(--s, 1));
+  font-weight: 600;
+  color: #fff;
+  background: #16a34a;
+  padding: calc(3px * var(--s, 1)) calc(9px * var(--s, 1)) calc(3px * var(--s, 1)) calc(6px * var(--s, 1));
+  border-radius: 9999px;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35);
+  white-space: nowrap;
+}
+
+.whats-new-cheer.is-showing {
+  animation: whats-new-pop-in 0.5s ease-out forwards;
+}
+
+.whats-new-cheer.is-leaving {
+  animation: whats-new-pop-out 0.26s ease-in forwards;
+}
+
+.whats-new-cheer.is-static,
+.whats-new-keycap.is-static {
+  opacity: 1;
+}
+
+@keyframes whats-new-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes whats-new-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes whats-new-label-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(4px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+}
+
+@keyframes whats-new-pop-in {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(10px) scale(0.4);
+  }
+  50% {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(-4px) scale(1.14);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -100%) translateY(1px) scale(0.97);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+}
+
+@keyframes whats-new-pop-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -100%);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -100%) translateY(-12px) scale(0.95);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .whats-new-dialog,
+  .whats-new-toast {
+    animation: none;
+  }
+}

@@ -38,5 +38,23 @@
     "checkNow": "Check for updates now",
     "viewReleases": "View release notes ↗",
     "checkFailed": "Check failed: {{error}}"
+  },
+  "whatsNew": {
+    "eyebrow": "New",
+    "title": "Kick what you copy into your library",
+    "step1": "Copy some text and a football appears next to your cursor",
+    "step2": "Click to shoot, or hold and pull back to aim",
+    "step3": "A goal saves it, and a shot away from the goal bounces off the screen edge",
+    "autoNote": "You use Auto capture, so copies don't show a reminder. Turning this on switches to Confirm capture; copies you don't kick are still saved when the countdown ends.",
+    "footnote": "The circle reminder becomes a football. Switch back anytime in Settings → Capture.",
+    "later": "Not now",
+    "enable": "Turn on football",
+    "enabled": "Turned on",
+    "toast": "Football is on. Try it on your next copy",
+    "close": "Close",
+    "replay": "Play demo",
+    "demoLabel": "Demo: after copying a line, a football appears by the cursor; it is pulled back, released, bounces off the top edge into the goal and is saved",
+    "demoCheer": "Off the wall!",
+    "demoSaved": "Saved"
   }
 }

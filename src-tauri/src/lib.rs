@@ -8,6 +8,7 @@ mod scheduler;
 mod secure_store;
 mod storage;
 mod update;
+mod whats_new;
 
 use capture::detector::CaptureDetector;
 use commands::capture::AppState;
@@ -70,6 +71,7 @@ pub fn run() {
             suppress_reopen_until: std::sync::Arc::new(std::sync::Mutex::new(None)),
             football_layout: std::sync::Arc::new(std::sync::Mutex::new(None)),
         })
+        .manage(whats_new::WhatsNewState::new())
         .setup(move |app| {
             eprintln!("[openwiki] App setup started");
 
@@ -137,8 +139,14 @@ pub fn run() {
             // --- System Tray ---
             setup_tray(app)?;
 
+            // --- "What's new" card after an update (reads first-run markers before they are written) ---
+            let show_whats_new = whats_new::prepare(app, AUTOSTART_DEFAULT_APPLIED_KEY);
+
             // --- Launch at startup default ---
             apply_default_autostart_once(app);
+            if show_whats_new {
+                show_main_window(app.handle(), None);
+            }
 
             // --- Cleanup stale compile locks from interrupted sessions ---
             {
@@ -223,6 +231,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            whats_new::get_whats_new,
+            whats_new::mark_whats_new_seen,
             commands::capture::save_captured_content,
             commands::capture::write_clipboard_text,
             commands::capture::save_spotlight_content,
