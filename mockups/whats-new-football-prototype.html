@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenWiki 新功能弹窗 · 原型</title>
+<style>
+/* ── 设计令牌：全部来自 DESIGN.md / src/index.css ── */
+:root {
+  --bg: #FAFAF8; --surface: #FFFFFF; --raised: #F5F5F0; --border: #E7E5E4;
+  --text: #1C1917; --text2: #57534E; --muted: #A8A29E; --disabled: #D6D3D1;
+  --accent: #F97316; --accent-hover: #EA580C; --accent-soft: #FFF7ED; --accent-ink: #C2410C;
+  --success: #16A34A;
+  --desk: #E9E7E2; --scrim: rgba(28, 25, 23, 0.32);
+  --shadow-dialog: 0 24px 70px rgba(28, 25, 23, 0.24);
+  --doc-line: #E7E5E4; --doc-head: #D6D3D1; --doc-dot: #D6D3D1; --select: rgba(249, 115, 22, 0.24);
+  --doc-shadow: rgba(28, 25, 23, 0.08);
+  --font: "Plus Jakarta Sans", "Cabinet Grotesk", -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --bg: #0C0A09; --surface: #1C1917; --raised: #292524; --border: #3D3935;
+  --text: #FAFAF8; --text2: #A8A29E; --muted: #78716C; --disabled: #57534E;
+  --accent: #FB923C; --accent-hover: #F97316; --accent-soft: #431407; --accent-ink: #FDBA74;
+  --desk: #000000; --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-dialog: 0 24px 70px rgba(0, 0, 0, 0.55);
+  --doc-line: #3D3935; --doc-head: #57534E; --doc-dot: #57534E; --select: rgba(251, 146, 60, 0.3);
+  --doc-shadow: rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme="system"] {
+    --bg: #0C0A09; --surface: #1C1917; --raised: #292524; --border: #3D3935;
+    --text: #FAFAF8; --text2: #A8A29E; --muted: #78716C; --disabled: #57534E;
+    --accent: #FB923C; --accent-hover: #F97316; --accent-soft: #431407; --accent-ink: #FDBA74;
+    --desk: #000000; --scrim: rgba(0, 0, 0, 0.5);
+    --shadow-dialog: 0 24px 70px rgba(0, 0, 0, 0.55);
+    --doc-line: #3D3935; --doc-head: #57534E; --doc-dot: #57534E; --select: rgba(251, 146, 60, 0.3);
+    --doc-shadow: rgba(0, 0, 0, 0.35);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; font-family: var(--font); background: var(--desk); color: var(--text); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+svg.icon { width: 1em; height: 1em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+/* ── 原型控制条（不属于设计本身） ── */
+.proto-bar { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 50; width: max-content; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; justify-content: center;
+  padding: 6px 8px 6px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(28, 25, 23, 0.08); font-size: 12px; color: var(--text2); max-width: calc(100vw - 24px); }
+.proto-bar .brand { font-weight: 700; color: var(--text); }
+.proto-bar .grp { display: flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--raised); }
+.seg button { border: 0; background: transparent; color: var(--text2); font-size: 12px; font-weight: 500; padding: 4px 9px; border-radius: 4px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--accent-ink); box-shadow: 0 1px 2px rgba(28, 25, 23, 0.08); }
+.proto-bar label { display: flex; align-items: center; gap: 5px; cursor: pointer; user-select: none; }
+.proto-bar .reopen { border: 0; background: var(--accent-hover); color: #fff; font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; cursor: pointer; }
+
+/* ── 主窗口背景（模拟更新重启后被打开的 OpenWiki） ── */
+.appwin { position: relative; width: min(960px, calc(100vw - 24px)); height: min(640px, calc(100vh - 88px)); min-height: 560px; margin: 68px auto 20px; border-radius: 12px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border); box-shadow: 0 30px 80px rgba(28, 25, 23, 0.18); }
+.app-head { position: relative; display: flex; align-items: center; height: 40px; padding: 0 16px 0 78px; border-bottom: 1px solid var(--border); }
+.lights { position: absolute; left: 14px; top: 14px; display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 9999px; display: block; }
+.lights i:nth-child(1) { background: #FF5F57; } .lights i:nth-child(2) { background: #FEBC2E; } .lights i:nth-child(3) { background: #28C840; }
+.wordmark { font-size: 16px; font-weight: 700; color: #F97316; }
+.app-nav { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.app-nav .tabs { display: inline-flex; padding: 2px; border-radius: 6px; background: var(--raised); }
+.app-nav .tab { display: flex; align-items: center; gap: 4px; padding: 4px 12px; font-size: 13px; font-weight: 500; color: var(--muted); border-radius: 4px; }
+.app-nav .tab.is-on { background: var(--surface); color: #F97316; box-shadow: 0 1px 2px rgba(28, 25, 23, 0.08); }
+.app-head .search { margin-left: auto; color: var(--muted); font-size: 15px; display: flex; }
+.app-body { max-width: 640px; margin: 0 auto; padding: 24px 20px; display: grid; gap: 12px; }
+.item { display: grid; grid-template-columns: 32px 1fr; gap: 12px; padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--border); }
+.item .kind { width: 32px; height: 32px; border-radius: 6px; display: grid; place-items: center; background: var(--raised); color: var(--text2); font-size: 15px; }
+.item h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.item p { margin: 0; font-size: 12px; color: var(--muted); }
+
+/* ── 弹窗 ── */
+.scrim { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--scrim); opacity: 0; transition: opacity 0.2s ease-out; }
+.scrim.is-open { opacity: 1; }
+.scrim.is-closing { transition: opacity 0.15s ease-in; }
+.dialog { position: relative; width: min(440px, 100%); max-height: 100%; overflow: auto; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-dialog);
+  transform: translateY(8px); transition: transform 0.2s ease-out; }
+.scrim.is-open .dialog { transform: none; }
+.dialog:focus { outline: none; }
+.close { position: absolute; top: 20px; right: 20px; z-index: 2; width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); color: var(--muted); font-size: 14px; transition: color 0.1s, background 0.1s; }
+.close:hover { color: var(--text); background: var(--raised); }
+
+.stage { position: relative; aspect-ratio: 432 / 270; border-radius: 12px; overflow: hidden; background: var(--raised); --s: 1; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.keycap { position: absolute; transform: translate(-50%, -100%); padding: calc(4px * var(--s)) calc(7px * var(--s)); border-radius: 6px; font: 600 calc(11px * var(--s)) / 1 var(--mono);
+  color: var(--text); background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(28, 25, 23, 0.12); opacity: 0; pointer-events: none; white-space: nowrap; }
+.keycap.is-on { animation: pill-in 0.2s ease-out forwards; }
+.cheer { position: absolute; transform: translate(-50%, -100%); display: flex; flex-direction: column; align-items: center; gap: calc(4px * var(--s)); opacity: 0; pointer-events: none; }
+.cheer b { display: block; font-weight: 800; font-size: calc(19px * var(--s)); line-height: 1.1; color: #F97316; transform: rotate(-4deg); white-space: nowrap;
+  text-shadow: 1.5px 0 0 #fff, -1.5px 0 0 #fff, 0 1.5px 0 #fff, 0 -1.5px 0 #fff, 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 0 6px 14px rgba(28, 25, 23, 0.3); }
+.cheer span { display: flex; align-items: center; gap: calc(3px * var(--s)); font-size: calc(11px * var(--s)); font-weight: 600; color: #fff; background: #16A34A; white-space: nowrap;
+  padding: calc(3px * var(--s)) calc(9px * var(--s)) calc(3px * var(--s)) calc(6px * var(--s)); border-radius: 9999px; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.35); }
+.cheer.is-showing { animation: pop-in 0.5s ease-out forwards; }
+.cheer.is-leaving { animation: pop-out 0.26s ease-in forwards; }
+.cheer.is-static, .keycap.is-static { opacity: 1; }
+.replay { position: absolute; left: 10px; bottom: 10px; display: none; align-items: center; gap: 5px; padding: 5px 10px 5px 8px; border-radius: 9999px; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--text); background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(28, 25, 23, 0.1); }
+.replay .icon { font-size: 11px; }
+.stage.is-poster .replay { display: flex; }
+
+.body { padding: 18px 10px 6px; }
+.eyebrow { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 600; color: var(--accent-ink); }
+.eyebrow .ver { font: 500 11px/1 var(--mono); color: var(--muted); }
+.dialog h2 { margin: 6px 0 14px; font-size: 20px; line-height: 1.35; font-weight: 700; letter-spacing: -0.01em; }
+.steps { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 8px; }
+.steps li { display: grid; grid-template-columns: 22px 1fr; align-items: center; gap: 10px; font-size: 13px; line-height: 1.5; color: var(--text2); transition: color 0.15s; }
+.steps .num { width: 22px; height: 22px; border-radius: 9999px; display: grid; place-items: center; font: 600 11px/1 var(--mono); color: var(--muted); background: var(--raised); transition: color 0.15s, background 0.15s; }
+.steps li.is-active { color: var(--text); }
+.steps li.is-active .num { color: var(--accent-ink); background: var(--accent-soft); }
+.note { display: grid; grid-template-columns: 14px 1fr; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 12px; background: var(--raised); font-size: 12px; line-height: 1.6; color: var(--text2); }
+.note .icon { margin-top: 3px; font-size: 14px; color: var(--accent-ink); }
+.note b { color: var(--text); font-weight: 600; }
+.foot { margin: 0 0 16px; font-size: 12px; line-height: 1.6; color: var(--muted); }
+.actions { display: flex; gap: 10px; }
+.btn { height: 40px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; transition: background 0.1s, border-color 0.1s, color 0.1s; }
+.btn-secondary { flex: 1; font-weight: 500; color: var(--text2); background: var(--surface); border: 1px solid var(--border); }
+.btn-secondary:hover { background: var(--raised); color: var(--text); }
+.btn-primary { flex: 1.4; font-weight: 600; color: #fff; background: #F97316; border: 1px solid #F97316; }
+.btn-primary:hover { background: #EA580C; border-color: #EA580C; }
+.btn-primary.is-done { background: #16A34A; border-color: #16A34A; cursor: default; }
+.btn:focus-visible, .close:focus-visible, .replay:focus-visible, .seg button:focus-visible, .reopen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.toast { position: absolute; z-index: 30; left: 50%; bottom: 24px; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; font-size: 13px; font-weight: 500;
+  color: #FAFAF8; background: #1C1917; border: 1px solid transparent; box-shadow: 0 8px 24px rgba(28, 25, 23, 0.24); opacity: 0; transform: translate(-50%, 8px); transition: opacity 0.2s ease-out, transform 0.2s ease-out; pointer-events: none; }
+[data-theme="dark"] .toast { background: #292524; border-color: #3D3935; }
+.toast .icon { color: #4ADE80; font-size: 15px; }
+.toast.is-on { opacity: 1; transform: translate(-50%, 0); }
+
+@keyframes pill-in { from { opacity: 0; transform: translate(-50%, -100%) translateY(4px) scale(0.9); } to { opacity: 1; transform: translate(-50%, -100%); } }
+@keyframes pop-in { 0% { opacity: 0; transform: translate(-50%, -100%) translateY(10px) scale(0.4); } 50% { opacity: 1; transform: translate(-50%, -100%) translateY(-4px) scale(1.14); }
+  75% { opacity: 1; transform: translate(-50%, -100%) translateY(1px) scale(0.97); } 100% { opacity: 1; transform: translate(-50%, -100%); } }
+@keyframes pop-out { from { opacity: 1; transform: translate(-50%, -100%); } to { opacity: 0; transform: translate(-50%, -100%) translateY(-12px) scale(0.95); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim, .dialog, .toast, .steps li, .steps .num { transition: none; }
+}
+@media (max-width: 520px) {
+  .appwin { margin-top: 124px; min-height: 620px; }
+  .app-nav .tab span { display: none; }
+  .dialog h2 { font-size: 18px; }
+}
+</style>
+</head>
+<body>
+
+<div class="proto-bar" role="toolbar" aria-label="原型控制">
+  <span class="brand">新功能弹窗 · 原型</span>
+  <span class="grp">主题<span class="seg" data-key="theme">
+    <button data-v="light" aria-pressed="true">浅色</button><button data-v="dark" aria-pressed="false">深色</button><button data-v="system" aria-pressed="false">跟随系统</button>
+  </span></span>
+  <span class="grp">用户的捕获模式<span class="seg" data-key="mode">
+    <button data-v="confirm" aria-pressed="true">确认</button><button data-v="auto" aria-pressed="false">自动</button>
+  </span></span>
+  <label><input type="checkbox" id="reduce">减少动态效果</label>
+  <button class="reopen" id="reopen">重新弹出</button>
+</div>
+
+<div class="appwin">
+  <header class="app-head">
+    <span class="lights" aria-hidden="true"><i></i><i></i><i></i></span>
+    <span class="wordmark">OpenWiki</span>
+    <nav class="app-nav" aria-hidden="true"><span class="tabs">
+      <span class="tab is-on"><svg class="icon" viewBox="0 0 24 24"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg><span>内容</span></span>
+      <span class="tab"><svg class="icon" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg><span>知识</span></span>
+      <span class="tab"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg><span>洞察</span></span>
+      <span class="tab"><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.93 4.93l2.12 2.12M16.95 16.95l2.12 2.12M2 12h3M19 12h3M4.93 19.07l2.12-2.12M16.95 7.05l2.12-2.12"/></svg><span>设置</span></span>
+    </span></nav>
+    <span class="search" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+  </header>
+  <main class="app-body" aria-hidden="true">
+    <div class="item"><span class="kind"><svg class="icon" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></svg></span>
+      <div><h3>随手记下的好句子，最后都去哪了？</h3><p>今天 21:48 · Safari · 阅读</p></div></div>
+    <div class="item"><span class="kind"><svg class="icon" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
+      <div><h3>Tauri 2 多窗口生命周期笔记</h3><p>今天 20:12 · Chrome · 开发</p></div></div>
+    <div class="item"><span class="kind"><svg class="icon" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></svg></span>
+      <div><h3>截图：本周产品数据</h3><p>昨天 18:30 · 截图</p></div></div>
+    <div class="item"><span class="kind"><svg class="icon" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4M16 13H8M16 17H8M10 9H8"/></svg></span>
+      <div><h3>周末读完《设计中的设计》的三条摘录</h3><p>昨天 11:05 · 微信读书 · 设计</p></div></div>
+  </main>
+
+  <div class="scrim" id="scrim" hidden>
+    <div class="dialog" id="dialog" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="wn-title" aria-describedby="wn-steps">
+      <button class="close" id="close" aria-label="关闭"><svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      <div class="stage" id="stage">
+        <canvas id="demo" role="img" aria-label="演示：复制一行文字后，鼠标旁出现足球；按住往后拉，松手射出，撞到上边反弹进门，显示已收藏"></canvas>
+        <div class="keycap" id="keycap" aria-hidden="true">⌘ C</div>
+        <div class="cheer" id="cheer" aria-hidden="true"><b>反弹破门！</b><span><svg class="icon" viewBox="0 0 24 24" style="stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg>已收藏</span></div>
+        <button class="replay" id="replay"><svg class="icon" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></svg>播放演示</button>
+      </div>
+      <div class="body">
+        <p class="eyebrow">新玩法<span class="ver">v0.3.25</span></p>
+        <h2 id="wn-title">把复制的内容，一脚踢进收藏</h2>
+        <ol class="steps" id="wn-steps">
+          <li data-step="1"><span class="num">1</span>复制文字，鼠标旁会出现一个足球</li>
+          <li data-step="2"><span class="num">2</span>点一下直接射门，或按住往后拉来瞄准</li>
+          <li data-step="3"><span class="num">3</span>进门就收藏好了，背对球门还能撞墙反弹</li>
+        </ol>
+        <p class="note" id="note" hidden><svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          <span>你现在用的是<b>自动</b>捕获，复制后不会弹出提醒。开启后会改成<b>确认</b>捕获；来不及踢的球，倒计时结束也会自动收藏。</span></p>
+        <p class="foot">开启后圆形提醒会换成足球，随时可以在「设置 → 采集」换回。</p>
+        <div class="actions">
+          <button class="btn btn-secondary" id="later">先不用</button>
+          <button class="btn btn-primary" id="enable">开启足球玩法</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"><svg class="icon" viewBox="0 0 24 24" style="stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg><span id="toast-text"></span></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const mix = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
+const seg = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+const easeInOut = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+const easeOut = (t) => 1 - Math.pow(1 - t, 3);
+const easeOutBack = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+const unit = (x, y) => { const l = Math.hypot(x, y) || 1; return { x: x / l, y: y / l }; };
+
+// ── 演示舞台：432×270 的迷你"屏幕"，左边一个文档窗口，右下角是缩小的球门 ──
+const W = 432, H = 270;
+const DOC = { x: 18, y: 18, w: 254, h: 208 };
+const LINES = [{ y: 40, w: 132, head: true }, { y: 66, w: 196 }, { y: 84, w: 214 }, { y: 102, w: 172, pick: true }, { y: 120, w: 206 }, { y: 138, w: 150 }, { y: 156, w: 192 }, { y: 174, w: 118 }, { y: 192, w: 170 }];
+const PICK = LINES.find((l) => l.pick);
+const SEL_START = { x: 36, y: PICK.y + 3.5 };
+const SEL_END = { x: 38 + PICK.w + 2, y: PICK.y + 3.5 };
+const IDLE = { x: 150, y: 246 };
+const GS = 0.56; // 球门是 App 里默认尺寸的 0.56
+const GW = 170 * GS, GH = 104 * GS;
+const F = (() => { const x1 = W - 14, x0 = x1 - GW, y1 = H - 20, y0 = y1 - GH; return { x0, y0, x1, y1, bx0: x0 + GW * 0.12, bx1: x1 - GW * 0.12, by0: y0 + GH * 0.26, by1: y1 - GH * 0.08 }; })();
+const BASE = { x0: F.x0 + 2, x1: F.x1 - 2, y: F.y1 + 7 };
+const R0 = 10, REND = R0 * 0.56, PULL = 30;
+const REST = { x: SEL_END.x + 20, y: SEL_END.y + 20 };
+const LAND = { x: lerp(F.bx0, F.bx1, 0.6), y: lerp(F.by0, F.by1, 0.45) };
+// 台球式反弹：把落点沿上边"照镜子"，瞄镜子里的点，撞上边后正好弹进门
+const MIRROR = { x: LAND.x, y: 2 * R0 - LAND.y };
+let SHOT = unit(MIRROR.x - REST.x, MIRROR.y - REST.y);
+let PULLED = { x: REST.x - SHOT.x * PULL, y: REST.y - SHOT.y * PULL };
+SHOT = unit(MIRROR.x - PULLED.x, MIRROR.y - PULLED.y);
+PULLED = { x: REST.x - SHOT.x * PULL, y: REST.y - SHOT.y * PULL };
+const BOUNCE = { x: PULLED.x + SHOT.x * ((PULLED.y - R0) / -SHOT.y), y: R0 };
+
+// ── 时间线（秒）：复制 → 出球 → 拉开 → 松手 → 撞边 → 进门 → 收尾 ──
+const TL = { cursorIn: [0.15, 0.75], select: [0.85, 1.55], keyOn: 1.6, ballIn: [1.75, 2.1], keyOff: 2.2, toBall: [2.3, 2.8], pull: [2.95, 3.7], release: 3.8 };
+TL.kickEnd = TL.release + 0.07;
+TL.bounce = TL.kickEnd + 0.26;
+TL.goal = TL.bounce + 0.56;
+TL.leave = TL.goal + 2.2;
+TL.gone = TL.leave + 0.35;
+TL.loop = TL.gone + 1.2;
+TL.poster = TL.goal + 0.9;
+
+const canvas = $('#demo'), g = canvas.getContext('2d'), stage = $('#stage');
+const keycap = $('#keycap'), cheer = $('#cheer');
+const stepEls = [...document.querySelectorAll('.steps li')];
+let scale = 1, dpr = 1, pal = {};
+let clock = 0, freeze = 0, raf = 0, lastNow = 0, running = false, playOnce = false;
+let parts = [], rings = [], trail = [], sim = null, shake = 0;
+const net = { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0, sigma: 30 * GS };
+
+function place(el, x, y) { el.style.left = (x / W) * 100 + '%'; el.style.top = (y / H) * 100 + '%'; }
+place(keycap, REST.x - 2, SEL_END.y - 10);
+place(cheer, (F.x0 + F.x1) / 2, F.y0 - 8);
+
+function readPalette() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (n) => cs.getPropertyValue(n).trim();
+  pal = { stage: v('--raised'), surface: v('--surface'), border: v('--border'), line: v('--doc-line'), head: v('--doc-head'), dot: v('--doc-dot'), select: v('--select'), shadow: v('--doc-shadow') };
+}
+function resize() {
+  const rect = stage.getBoundingClientRect();
+  if (!rect.width) return;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  scale = rect.width / W;
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+  stage.style.setProperty('--s', scale.toFixed(3));
+  render();
+}
+
+// ── 足球与球门的画法：照搬 App 的 src/features/football/engine.ts（线宽按比例缩小） ──
+let ballTexture = null;
+function getBallTexture() {
+  if (ballTexture) return ballTexture;
+  const R = 64, c = document.createElement('canvas');
+  c.width = c.height = R * 2 + 4; ballTexture = c;
+  const x = c.getContext('2d');
+  x.translate(R + 2, R + 2);
+  const vtx = (cx, cy, rr, rot, i) => { const a = rot + (i * Math.PI * 2) / 5; return [cx + rr * Math.cos(a), cy + rr * Math.sin(a)]; };
+  const pent = (cx, cy, rr, rot) => { x.beginPath(); for (let i = 0; i < 5; i++) x.lineTo(...vtx(cx, cy, rr, rot, i)); x.closePath(); x.fill(); };
+  x.beginPath(); x.arc(0, 0, R, 0, Math.PI * 2); x.fillStyle = '#FAFAF8'; x.fill();
+  x.save(); x.clip();
+  x.fillStyle = '#1C1917'; x.strokeStyle = '#1C1917'; x.lineWidth = R * 0.05; x.lineCap = 'round';
+  const pr = R * 0.3, outer = [];
+  pent(0, 0, pr, -Math.PI / 2);
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+    const o = { cx: Math.cos(a) * R * 0.95, cy: Math.sin(a) * R * 0.95, rot: a + Math.PI };
+    pent(o.cx, o.cy, pr, o.rot); outer.push(o);
+    const [sx, sy] = vtx(0, 0, pr, -Math.PI / 2, i), [ex, ey] = vtx(o.cx, o.cy, pr, o.rot, 0);
+    x.beginPath(); x.moveTo(sx, sy); x.lineTo(ex, ey); x.stroke();
+  }
+  const nearest = (p, q) => [1, 4].map((k) => vtx(p.cx, p.cy, pr, p.rot, k)).sort((m, n) => Math.hypot(m[0] - q.cx, m[1] - q.cy) - Math.hypot(n[0] - q.cx, n[1] - q.cy))[0];
+  for (let i = 0; i < 5; i++) {
+    const A = outer[i], B = outer[(i + 1) % 5], [ax, ay] = nearest(A, B), [bx, by] = nearest(B, A);
+    x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.stroke();
+  }
+  const shade = x.createRadialGradient(-R * 0.35, -R * 0.4, R * 0.08, 0, 0, R * 1.05);
+  shade.addColorStop(0, 'rgba(255,255,255,0.35)'); shade.addColorStop(0.5, 'rgba(255,255,255,0)'); shade.addColorStop(1, 'rgba(28,25,23,0.38)');
+  x.fillStyle = shade; x.fillRect(-R, -R, R * 2, R * 2);
+  x.restore();
+  x.beginPath(); x.arc(0, 0, R - 1, 0, Math.PI * 2); x.strokeStyle = 'rgba(28,25,23,0.5)'; x.lineWidth = 2; x.stroke();
+  return c;
+}
+function drawBall(b) {
+  if (b.a <= 0.01 || b.r <= 0.3) return;
+  const k = b.r * 1.03125;
+  g.save(); g.globalAlpha *= b.a; g.translate(b.x, b.y); g.rotate(b.dir); g.scale(b.sx, b.sy); g.rotate(-b.dir + b.rot);
+  g.drawImage(getBallTexture(), -k, -k, k * 2, k * 2); g.restore();
+}
+function deform(p) {
+  if (Math.abs(net.amp) < 0.002) return p;
+  const dx = p.x - net.cx, dy = p.y - net.cy, f = net.amp * Math.exp(-(dx * dx + dy * dy) / (2 * net.sigma * net.sigma));
+  return { x: p.x - dx * 0.7 * f, y: p.y - dy * 0.7 * f + 8 * GS * f };
+}
+function drawGoalBack(ox, oy) {
+  const TL_ = { x: F.x0, y: F.y0 }, TR = { x: F.x1, y: F.y0 }, BL = { x: F.x0, y: F.y1 }, BR = { x: F.x1, y: F.y1 };
+  const bTL = { x: F.bx0, y: F.by0 }, bTR = { x: F.bx1, y: F.by0 }, bBL = { x: F.bx0, y: F.by1 }, bBR = { x: F.bx1, y: F.by1 };
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.fillStyle = 'rgba(28,25,23,0.14)'; g.beginPath(); g.ellipse((F.x0 + F.x1) / 2, F.y1 + 1, (F.x1 - F.x0) * 0.56, 4, 0, 0, Math.PI * 2); g.fill();
+  g.beginPath();
+  const line = (a, b) => { for (let i = 0; i <= 10; i++) { const p = deform(mix(a, b, i / 10)); if (i) g.lineTo(p.x, p.y); else g.moveTo(p.x, p.y); } };
+  for (let i = 0; i <= 8; i++) line(mix(bTL, bTR, i / 8), mix(bBL, bBR, i / 8));
+  for (let j = 0; j <= 5; j++) line(mix(bTL, bBL, j / 5), mix(bTR, bBR, j / 5));
+  for (let i = 1; i < 8; i++) line(mix(TL_, TR, i / 8), mix(bTL, bTR, i / 8));
+  for (const k of [1 / 2]) line(mix(TL_, bTL, k), mix(TR, bTR, k));
+  for (let j = 1; j < 5; j++) { line(mix(TL_, BL, j / 5), mix(bTL, bBL, j / 5)); line(mix(TR, BR, j / 5), mix(bTR, bBR, j / 5)); }
+  for (const k of [1 / 2]) { line(mix(TL_, bTL, k), mix(BL, bBL, k)); line(mix(TR, bTR, k), mix(BR, bBR, k)); }
+  g.strokeStyle = 'rgba(28,25,23,0.32)'; g.lineWidth = 1.8; g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 0.8; g.stroke();
+  g.beginPath(); g.moveTo(F.x0, F.y0); g.lineTo(F.bx0, F.by0); g.lineTo(F.bx0, F.by1); g.lineTo(F.x0, F.y1);
+  g.moveTo(F.x1, F.y0); g.lineTo(F.bx1, F.by0); g.lineTo(F.bx1, F.by1); g.lineTo(F.x1, F.y1);
+  g.strokeStyle = 'rgba(28,25,23,0.35)'; g.lineWidth = 2.6; g.stroke();
+  g.strokeStyle = '#F5F5F0'; g.lineWidth = 1.4; g.stroke();
+  if (net.flash > 0) {
+    const glow = g.createRadialGradient(net.cx, net.cy, 0, net.cx, net.cy, 30);
+    glow.addColorStop(0, `rgba(255,255,255,${(0.8 * net.flash).toFixed(3)})`); glow.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = glow; g.beginPath(); g.arc(net.cx, net.cy, 30, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+}
+function drawGoalFrame(ox, oy) {
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(F.x0, F.y1); g.lineTo(F.x0, F.y0); g.lineTo(F.x1, F.y0); g.lineTo(F.x1, F.y1);
+  g.shadowColor = 'rgba(0,0,0,0.28)'; g.shadowBlur = 6; g.shadowOffsetY = 2;
+  g.strokeStyle = 'rgba(28,25,23,0.55)'; g.lineWidth = 5.4; g.stroke();
+  g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0;
+  g.strokeStyle = '#FAFAF8'; g.lineWidth = 3.4; g.stroke();
+  g.restore();
+}
+function drawCountdown(progress, ox, oy) {
+  g.save(); g.translate(ox, oy); g.lineCap = 'round'; g.lineWidth = 2.2;
+  g.strokeStyle = 'rgba(28,25,23,0.14)'; g.beginPath(); g.moveTo(BASE.x0, BASE.y); g.lineTo(BASE.x1, BASE.y); g.stroke();
+  if (progress > 0.002) { g.strokeStyle = '#F97316'; g.beginPath(); g.moveTo(BASE.x0, BASE.y); g.lineTo(lerp(BASE.x0, BASE.x1, progress), BASE.y); g.stroke(); }
+  g.restore();
+}
+function burst(x, y, n, dirX, dirY, spread, colors, speed) {
+  const base = Math.atan2(dirY, dirX);
+  for (let i = 0; i < n; i++) {
+    const a = base + (Math.random() - 0.5) * spread, v = (60 + Math.random() * 150) * speed;
+    parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: 0.35 + Math.random() * 0.35, s: 1 + Math.random() * 1.3, c: colors[i % colors.length], rot: Math.random() * 6, vr: (Math.random() - 0.5) * 20 });
+  }
+}
+const ring = (x, y, r0, color) => rings.push({ x, y, r0, color, t: 0 });
+
+// ── 场景 ──
+function roundRect(x, y, w, h, r) { g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+const ARROW = new Path2D('M0 0 L0 16 L4.3 12.1 L7.2 18.6 L9.9 17.4 L7.1 11 L12.8 11 Z');
+function drawCursor(p, pressed) {
+  g.save(); g.translate(p.x, p.y); const s = pressed ? 0.88 : 1; g.scale(s, s);
+  g.shadowColor = 'rgba(0,0,0,0.25)'; g.shadowBlur = 2; g.shadowOffsetY = 1;
+  g.lineJoin = 'round'; g.lineWidth = 1.8; g.strokeStyle = '#FFFFFF'; g.stroke(ARROW);
+  g.shadowColor = 'transparent'; g.fillStyle = '#111111'; g.fill(ARROW); g.restore();
+}
+function cursorAt(t) {
+  if (t < TL.cursorIn[0]) return { p: IDLE, pressed: false };
+  if (t < TL.cursorIn[1]) return { p: mix(IDLE, SEL_START, easeInOut(seg(t, ...TL.cursorIn))), pressed: false };
+  if (t < TL.select[0]) return { p: SEL_START, pressed: false };
+  if (t < TL.select[1]) return { p: mix(SEL_START, SEL_END, easeInOut(seg(t, ...TL.select))), pressed: true };
+  if (t < TL.toBall[0]) return { p: SEL_END, pressed: false };
+  if (t < TL.toBall[1]) return { p: mix(SEL_END, REST, easeInOut(seg(t, ...TL.toBall))), pressed: false };
+  if (t < TL.pull[0]) return { p: REST, pressed: false };
+  if (t < TL.release) return { p: mix(REST, PULLED, easeOut(seg(t, ...TL.pull))), pressed: true };
+  if (t < TL.leave) return { p: PULLED, pressed: false };
+  return { p: mix(PULLED, IDLE, easeInOut(seg(t, TL.leave, TL.loop - 0.2))), pressed: false };
+}
+function ballAt(t) {
+  if (t < TL.ballIn[0] || t >= TL.gone) return null;
+  const b = { x: REST.x, y: REST.y, r: R0, sx: 1, sy: 1, dir: 0, rot: 0, a: 1, inside: false, resting: true };
+  if (t < TL.ballIn[1]) { b.r = R0 * Math.max(0.001, easeOutBack(seg(t, ...TL.ballIn))); return b; }
+  if (t < TL.pull[0]) { b.r = R0 * (1 + 0.07 * seg(t, TL.toBall[1] - 0.15, TL.toBall[1])); return b; }
+  if (t < TL.release) {
+    const k = easeOut(seg(t, ...TL.pull)), p = mix(REST, PULLED, k), j = k > 0.92 ? 0.8 : 0;
+    Object.assign(b, { x: p.x + (Math.random() - 0.5) * j, y: p.y + (Math.random() - 0.5) * j, dir: Math.atan2(PULLED.y - REST.y, PULLED.x - REST.x), sx: 1 + 0.14 * k });
+    b.sy = 1 / b.sx; return b;
+  }
+  const shotDir = Math.atan2(SHOT.y, SHOT.x);
+  if (t < TL.kickEnd) {
+    const q = Math.sin(Math.PI * seg(t, TL.release, TL.kickEnd));
+    return Object.assign(b, { x: PULLED.x, y: PULLED.y, dir: shotDir, sx: 1 - 0.2 * q, sy: 1 + 0.24 * q });
+  }
+  b.resting = false; b.rot = (Math.min(t, TL.goal) - TL.kickEnd) * 22;
+  if (t < TL.bounce) {
+    const p = mix(PULLED, BOUNCE, seg(t, TL.kickEnd, TL.bounce));
+    return Object.assign(b, { x: p.x, y: p.y, dir: shotDir, sx: 1.14, sy: 1 / 1.14 });
+  }
+  if (t < TL.goal) {
+    const k = seg(t, TL.bounce, TL.goal), u = 0.5 * k + 0.5 * (1 - (1 - k) * (1 - k)), p = mix(BOUNCE, LAND, u);
+    const stretch = 1 + 0.14 * Math.sin(Math.PI * Math.min(1, k * 2.5));
+    Object.assign(b, { x: p.x, y: p.y, r: lerp(R0, REND, u), dir: Math.atan2(LAND.y - BOUNCE.y, LAND.x - BOUNCE.x), sx: stretch, sy: 1 / stretch, inside: u > 0.86 });
+    const sq = t - TL.bounce;
+    if (sq < 0.09) { const q = Math.sin(Math.PI * (sq / 0.09)); Object.assign(b, { dir: Math.PI / 2, sx: 1 - 0.28 * q, sy: 1 + 0.2 * q }); }
+    return b;
+  }
+  if (!sim) return null;
+  return Object.assign(b, { x: sim.x, y: sim.y, r: REND, inside: true, rot: sim.rot, a: 1 - seg(t, TL.leave, TL.gone) });
+}
+
+// ── 每帧推进：时间线驱动主体动作，球网、碎屑、网里的球用简单物理 ──
+function fire(prev, now) {
+  const crossed = (at) => prev < at && now >= at;
+  if (crossed(TL.keyOn)) keycap.classList.add('is-on');
+  if (crossed(TL.keyOff)) keycap.classList.remove('is-on');
+  if (crossed(TL.release)) { ring(PULLED.x, PULLED.y, R0 * 1.3, '#F97316'); burst(PULLED.x, PULLED.y + R0 * 0.7, 7, 0, -1, 2.2, ['#A8A29E', '#D6D3D1', '#FAFAF8'], 0.45); }
+  if (crossed(TL.bounce)) { freeze = 0.04; ring(BOUNCE.x, BOUNCE.y, R0 * 0.9, '#FAFAF8'); burst(BOUNCE.x, BOUNCE.y, 9, 0, 1, 1.8, ['#F97316', '#FDBA74', '#FAFAF8'], 0.7); }
+  if (crossed(TL.goal)) {
+    net.cx = LAND.x; net.cy = LAND.y; net.v += 13.6; net.flash = 1; net.hold = 0.14;
+    freeze = 0.08; shake = 0.3; sim = { x: LAND.x, y: LAND.y, vx: (Math.random() - 0.5) * 40, vy: 0, rot: (TL.goal - TL.kickEnd) * 22 };
+    ring(LAND.x, LAND.y, 9, '#F97316');
+    burst(LAND.x, LAND.y, 16, -1, -1, 2.4, ['#F97316', '#FDBA74', '#FAFAF8', '#FACC15'], 0.9);
+    burst(LAND.x, LAND.y, 8, 1, -1, 2.0, ['#F97316', '#FAFAF8'], 0.6);
+    cheer.classList.remove('is-leaving', 'is-static'); void cheer.offsetWidth; cheer.classList.add('is-showing');
+  }
+  if (crossed(TL.leave)) { cheer.classList.remove('is-showing'); cheer.classList.add('is-leaving'); }
+}
+function resetScene() {
+  clock = 0; freeze = 0; parts = []; rings = []; trail = []; sim = null; shake = 0;
+  Object.assign(net, { cx: 0, cy: 0, amp: 0, v: 0, flash: 0, hold: 0 });
+  keycap.classList.remove('is-on'); cheer.classList.remove('is-showing', 'is-leaving', 'is-static');
+}
+function step(dt) {
+  const prev = clock;
+  clock += dt;
+  fire(prev, clock);
+  net.v += (-210 * net.amp - 9 * net.v) * dt; net.amp += net.v * dt; net.flash = Math.max(0, net.flash - dt / 0.2);
+  shake = Math.max(0, shake - dt);
+  if (sim) {
+    if (net.hold > 0) { net.hold -= dt; const p = deform(LAND); sim.x = p.x; sim.y = p.y; sim.rot += 4 * dt; }
+    else {
+      sim.vy += 1400 * GS * dt; sim.x += sim.vx * dt; sim.y += sim.vy * dt; sim.rot += (sim.vx / REND) * dt;
+      const floor = F.by1 - REND * 0.85;
+      if (sim.y > floor) { sim.y = floor; sim.vy = sim.vy > 30 ? -sim.vy * 0.35 : 0; sim.vx *= Math.pow(0.1, dt); }
+      sim.x = clamp(sim.x, F.bx0 + REND, F.bx1 - REND);
+    }
+  }
+  for (let i = parts.length - 1; i >= 0; i--) { const p = parts[i]; p.life += dt; if (p.life >= p.max) { parts.splice(i, 1); continue; } p.vy += 500 * dt; p.x += p.vx * dt; p.y += p.vy * dt; p.rot += p.vr * dt; }
+  for (let i = rings.length - 1; i >= 0; i--) { rings[i].t += dt; if (rings[i].t > 0.22) rings.splice(i, 1); }
+  const b = ballAt(clock);
+  if (b && !b.resting && clock < TL.goal) { trail.push({ x: b.x, y: b.y, r: b.r }); if (trail.length > 7) trail.shift(); }
+  else if (trail.length) trail.shift();
+}
+function syncSteps() {
+  const active = stage.classList.contains('is-poster') ? 0 : clock < TL.toBall[0] ? 1 : clock < TL.goal ? 2 : 3;
+  stepEls.forEach((li) => li.classList.toggle('is-active', Number(li.dataset.step) === active));
+}
+function render() {
+  if (!canvas.width) return;
+  const t = clock;
+  g.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = pal.stage; g.fillRect(0, 0, W, H);
+  const fade = 1 - seg(t, TL.leave, TL.gone);
+  // 文档窗口 + 选中的那一行
+  g.save(); g.shadowColor = pal.shadow; g.shadowBlur = 14; g.shadowOffsetY = 3;
+  roundRect(DOC.x, DOC.y, DOC.w, DOC.h, 10); g.fillStyle = pal.surface; g.fill(); g.restore();
+  roundRect(DOC.x + 0.5, DOC.y + 0.5, DOC.w - 1, DOC.h - 1, 10); g.strokeStyle = pal.border; g.lineWidth = 1; g.stroke();
+  for (let i = 0; i < 3; i++) { g.beginPath(); g.arc(DOC.x + 14 + i * 10, DOC.y + 12, 3, 0, Math.PI * 2); g.fillStyle = pal.dot; g.fill(); }
+  const selK = easeInOut(seg(t, ...TL.select)) * (t >= TL.loop - 0.01 ? 0 : 1);
+  if (selK > 0 && fade > 0) {
+    g.save(); g.globalAlpha = fade; roundRect(SEL_START.x - 2, PICK.y - 4.5, (SEL_END.x - SEL_START.x + 4) * selK, 16, 3); g.fillStyle = pal.select; g.fill(); g.restore();
+  }
+  for (const l of LINES) { roundRect(38, l.y + (l.head ? -1 : 0), l.w, l.head ? 9 : 7, 3.5); g.fillStyle = l.head ? pal.head : pal.line; g.fill(); }
+  // 球门、球、倒计时
+  const b = ballAt(t);
+  const goalA = t < TL.ballIn[0] ? 0 : Math.min(seg(t, TL.ballIn[0], TL.ballIn[0] + 0.25), fade);
+  const k = shake > 0 ? shake / 0.3 : 0, ox = k ? Math.sin(shake * 90) * 4.5 * GS * k : 0, oy = k ? Math.cos(shake * 70) * 1.6 * GS * k : 0;
+  if (goalA > 0) {
+    g.save(); g.globalAlpha = goalA;
+    drawGoalBack(ox, oy);
+    if (b && b.resting) { g.save(); g.globalAlpha *= 0.45 * b.a; g.fillStyle = '#000'; g.beginPath(); g.ellipse(b.x, b.y + R0 + 2, b.r * 0.9, b.r * 0.22, 0, 0, Math.PI * 2); g.fill(); g.restore(); }
+    trail.forEach((p, i) => { const kk = (i + 1) / trail.length; g.save(); g.globalAlpha *= 0.22 * kk; g.fillStyle = '#F97316'; g.beginPath(); g.arc(p.x, p.y, p.r * (0.5 + 0.5 * kk), 0, Math.PI * 2); g.fill(); g.restore(); });
+    if (b && b.inside) drawBall(b);
+    drawGoalFrame(ox, oy);
+    if (b && !b.inside) drawBall(b);
+    if (t < TL.goal) drawCountdown(t < TL.release ? 1 - 0.2 * Math.max(0, t - TL.ballIn[0]) : 1 - 0.2 * (TL.release - TL.ballIn[0]), ox, oy);
+    g.restore();
+  } else if (b) drawBall(b);
+  for (const q of rings) { const kk = q.t / 0.22; g.save(); g.globalAlpha = (1 - kk) * 0.85; g.strokeStyle = q.color; g.lineWidth = 2 * (1 - kk) + 0.5; g.beginPath(); g.arc(q.x, q.y, q.r0 * (1 + 1.3 * kk), 0, Math.PI * 2); g.stroke(); g.restore(); }
+  for (const p of parts) { g.save(); g.globalAlpha = 1 - p.life / p.max; g.translate(p.x, p.y); g.rotate(p.rot); g.fillStyle = p.c; g.fillRect(-p.s, -p.s * 0.6, p.s * 2, p.s * 1.2); g.restore(); }
+  const c = cursorAt(t);
+  drawCursor(c.p, c.pressed);
+  syncSteps();
+}
+function frame(now) {
+  if (!running) return;
+  const dt = Math.min(0.05, (now - lastNow) / 1000); lastNow = now;
+  if (freeze > 0) freeze -= dt; // 撞边、进门的一瞬间定格，打击感更强
+  else {
+    step(dt);
+    if (clock >= TL.loop) {
+      if (playOnce) { playOnce = false; stopDemo(); showPoster(); return; }
+      resetScene();
+    }
+  }
+  render();
+  raf = requestAnimationFrame(frame);
+}
+
+// ── 播放控制：打开弹窗才播；系统要求减少动态效果时只给一张静态图 + 「播放演示」 ──
+const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+const reduceBox = $('#reduce');
+const reduced = () => reduceBox.checked || mq.matches;
+function seek(t) { resetScene(); while (clock < t) step(1 / 60); freeze = 0; }
+function showPoster() {
+  running = false; cancelAnimationFrame(raf);
+  seek(TL.poster);
+  cheer.classList.remove('is-showing', 'is-leaving'); cheer.classList.add('is-static');
+  stage.classList.add('is-poster');
+  render();
+}
+function playDemo(once) {
+  cancelAnimationFrame(raf);
+  stage.classList.remove('is-poster');
+  resetScene(); playOnce = !!once; running = true; lastNow = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+function stopDemo() { running = false; cancelAnimationFrame(raf); }
+function startDemo() { if (reduced()) showPoster(); else playDemo(false); }
+$('#replay').addEventListener('click', () => playDemo(true));
+document.addEventListener('visibilitychange', () => {
+  if ($('#scrim').hidden) return;
+  if (document.hidden) stopDemo(); else if (!stage.classList.contains('is-poster')) { running = true; lastNow = performance.now(); raf = requestAnimationFrame(frame); }
+});
+
+// ── 弹窗开合 ──
+const scrim = $('#scrim'), enableBtn = $('#enable');
+let toastTimer = 0, lastFocus = null;
+function openDialog() {
+  lastFocus = document.activeElement;
+  scrim.hidden = false; scrim.classList.remove('is-closing');
+  enableBtn.classList.remove('is-done'); enableBtn.disabled = false; enableBtn.innerHTML = '开启足球玩法';
+  requestAnimationFrame(() => { scrim.classList.add('is-open'); resize(); startDemo(); $('#dialog').focus({ preventScroll: true }); });
+}
+function closeDialog() {
+  scrim.classList.add('is-closing'); scrim.classList.remove('is-open');
+  setTimeout(() => { scrim.hidden = true; stopDemo(); if (lastFocus && lastFocus.focus) lastFocus.focus(); }, 160);
+}
+function showToast(text) {
+  $('#toast-text').textContent = text; $('#toast').classList.add('is-on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('is-on'), 2600);
+}
+$('#later').addEventListener('click', closeDialog);
+$('#close').addEventListener('click', closeDialog);
+enableBtn.addEventListener('click', () => {
+  enableBtn.disabled = true; enableBtn.classList.add('is-done');
+  enableBtn.innerHTML = '<svg class="icon" viewBox="0 0 24 24" style="stroke-width:3"><path d="M20 6 9 17l-5-5"/></svg>已开启';
+  setTimeout(() => { closeDialog(); showToast('已开启足球玩法，下次复制时试试'); }, 700);
+});
+scrim.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.preventDefault(); closeDialog(); return; }
+  if (e.key !== 'Tab') return;
+  const items = [...$('#dialog').querySelectorAll('button:not([disabled])')].filter((el) => el.offsetParent !== null);
+  const first = items[0], last = items[items.length - 1];
+  if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+  else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+});
+
+// ── 原型控制条 ──
+document.querySelectorAll('.seg').forEach((segEl) => segEl.addEventListener('click', (e) => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  segEl.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)));
+  if (segEl.dataset.key === 'theme') { document.documentElement.dataset.theme = btn.dataset.v; readPalette(); render(); }
+  if (segEl.dataset.key === 'mode') $('#note').hidden = btn.dataset.v !== 'auto';
+}));
+reduceBox.addEventListener('change', () => { if (!scrim.hidden) startDemo(); });
+mq.addEventListener('change', () => { if (!scrim.hidden) startDemo(); });
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { readPalette(); render(); });
+$('#reopen').addEventListener('click', () => { if (scrim.hidden) openDialog(); else startDemo(); });
+new ResizeObserver(resize).observe(stage);
+
+function freezeAt(t) { // 定格到某一刻：动画停住，文字标签直接显示完整状态
+  stopDemo(); stage.classList.remove('is-poster'); seek(t);
+  keycap.classList.toggle('is-static', t >= TL.keyOn && t < TL.keyOff);
+  if (t >= TL.goal && t < TL.leave) { cheer.classList.remove('is-showing'); cheer.classList.add('is-static'); }
+  render();
+}
+window.demo = { seek: freezeAt, play: () => playDemo(false), TL }; // 调试用：demo.seek(4.8)
+// 网址参数（截图、评审用）：?theme=dark  ?mode=auto  ?reduce=1  ?t=4.8 定格到第 4.8 秒  ?action=enable / later 打开后自动点按钮
+const params = new URLSearchParams(location.search);
+const choose = (key, value) => { const btn = document.querySelector(`.seg[data-key="${key}"] button[data-v="${value}"]`); if (btn) btn.click(); };
+if (params.get('theme')) choose('theme', params.get('theme'));
+if (params.get('mode')) choose('mode', params.get('mode'));
+if (params.get('reduce') === '1') reduceBox.checked = true;
+readPalette();
+openDialog();
+if (params.has('t')) requestAnimationFrame(() => requestAnimationFrame(() => freezeAt(Number(params.get('t')))));
+if (['enable', 'later'].includes(params.get('action'))) setTimeout(() => $('#' + params.get('action')).click(), 600);
+</script>
+</body>
+</html>
