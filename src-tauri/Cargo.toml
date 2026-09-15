@@ -43,6 +43,7 @@ aes-gcm = "0.10"
 rand = "0.8"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
 
 [dev-dependencies]
 tempfile = "3"

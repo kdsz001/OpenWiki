@@ -26,6 +26,17 @@ pub fn run() {
     let detector = CaptureDetector::new();
 
     tauri::Builder::default()
+        // Must be the first plugin: a second OpenWiki exits here before anything else starts.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // On macOS a second copy only starts by itself (after a restart the system reopens the
+            // app and launch at startup starts it again), since opening it from Finder or the Dock
+            // just brings this one forward, so stay quiet. On Windows the user opened it again.
+            log::info!("[single-instance] stopped a second launch; this copy keeps running");
+            #[cfg(not(target_os = "macos"))]
+            show_main_window(app, None);
+            #[cfg(target_os = "macos")]
+            let _ = app;
+        }))
         .plugin(
             tauri_plugin_log::Builder::default()
                 .level(log::LevelFilter::Info)
