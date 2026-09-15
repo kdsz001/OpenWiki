@@ -1469,12 +1469,21 @@ fn suppress_reopen_temporarily(app: &tauri::AppHandle, duration: Duration) {
     };
 }
 
-fn cleanup_stored_pending_capture(state: &State<'_, AppState>, keep_path: Option<&str>) {
-    let pending = state
-        .pending_capture
-        .lock()
-        .ok()
-        .and_then(|mut value| value.take());
+/// Takes the stored pending capture and deletes its temporary image (unless it is `keep_path`).
+/// With `pending_id`, only that capture is taken: a newer copy that arrived while the bubble was
+/// busy stays stored for a bubble of its own.
+fn cleanup_stored_pending_capture(
+    state: &State<'_, AppState>,
+    keep_path: Option<&str>,
+    pending_id: Option<u64>,
+) {
+    let pending = state.pending_capture.lock().ok().and_then(|mut value| {
+        let stored = value.as_ref().and_then(|v| v.get("pending_id")).and_then(|v| v.as_u64());
+        match (pending_id, stored) {
+            (Some(mine), Some(stored)) if mine != stored => None,
+            _ => value.take(),
+        }
+    });
     if let Some(path) = pending
         .as_ref()
         .and_then(|value| value.get("image_path"))
@@ -1498,11 +1507,12 @@ pub fn confirm_capture(
     raw_text: Option<String>,
     image_path: Option<String>,
     user_note: Option<String>,
+    pending_id: Option<u64>,
 ) -> Result<CapturedContent, String> {
     // NOTE: Do NOT close the bubble window here.
     // The frontend shows a green checkmark animation for 1.5s before closing itself.
     suppress_reopen_temporarily(&app, Duration::from_secs(5));
-    cleanup_stored_pending_capture(&state, image_path.as_deref());
+    cleanup_stored_pending_capture(&state, image_path.as_deref(), pending_id);
 
     let event = CaptureEvent {
         content_type,
@@ -1598,17 +1608,24 @@ pub fn dismiss_capture(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
     image_path: Option<String>,
+    pending_id: Option<u64>,
 ) -> Result<(), String> {
     suppress_reopen_temporarily(&app, Duration::from_secs(5));
 
     // Hide bubble window from Rust side (backup)
     hide_bubble_window(&app);
 
-    cleanup_stored_pending_capture(&state, None);
+    cleanup_stored_pending_capture(&state, None, pending_id);
     if let Some(ref path) = image_path {
         if let Err(error) = crate::capture::image_lifecycle::cleanup_pending_image(path) {
             log::debug!("Dismiss skipped non-pending image: {}", error);
         }
+    }
+    // A copy made while this bubble was busy is still waiting: it gets a bubble of its own.
+    let waiting = state.pending_capture.lock().map(|pending| pending.is_some()).unwrap_or(false);
+    if waiting {
+        log::info!("A newer capture is still pending; showing a bubble for it");
+        crate::capture::detector::schedule_bubble_window(&app);
     }
     Ok(())
 }

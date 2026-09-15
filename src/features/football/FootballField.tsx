@@ -84,7 +84,7 @@ export default function FootballField() {
           );
         },
         onShot: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.shot),
-        onMiss: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.miss),
+        onNoSave: () => void emitTo(BALL_LABEL, FOOTBALL_EVENTS.noSave),
         onDone: (result: FootballResult) => {
           // Tell the ball window how it ended, then get off screen. The backend destroys the
           // field once the ball closes: destroying a webview that is still committing frames

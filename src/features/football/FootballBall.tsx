@@ -22,9 +22,11 @@ interface PendingCapture {
   source_app: string;
   raw_text: string | null;
   image_path: string | null;
+  /** Numbers the capture, so finishing it leaves a newer copy for a ball of its own. */
+  pending_id?: number;
 }
 
-type Stage = "aiming" | "saving" | "saved" | "failed" | "missed";
+type Stage = "aiming" | "saving" | "saved" | "failed" | "closing";
 
 const CARD_W = 320;
 const CARD_H = 140;
@@ -61,6 +63,7 @@ async function saveCapture(capture: PendingCapture): Promise<string | null> {
       rawText: capture.raw_text,
       imagePath: capture.image_path,
       userNote: null,
+      pendingId: capture.pending_id ?? null,
     });
     return null;
   } catch (e) {
@@ -100,7 +103,10 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
   // teardown, so the window closes itself only when the call failed.
   const discard = useCallback(async () => {
     try {
-      await invoke("dismiss_capture", { imagePath: pendingRef.current?.image_path ?? null });
+      await invoke("dismiss_capture", {
+        imagePath: pendingRef.current?.image_path ?? null,
+        pendingId: pendingRef.current?.pending_id ?? null,
+      });
     } catch {
       close();
     }
@@ -109,7 +115,7 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
   /** After a successful save, close through the backend (dismiss_capture), the same way the classic bubble closes. */
   const finishSaved = useCallback(async () => {
     try {
-      await invoke("dismiss_capture", { imagePath: null });
+      await invoke("dismiss_capture", { imagePath: null, pendingId: pendingRef.current?.pending_id ?? null });
     } catch {
       close(); // Already saved; closing is all that matters here.
     }
@@ -191,7 +197,8 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
     const win = winRef.current;
     Promise.all([
       listen<PendingCapture>("capture:pending", (e) => {
-        // A newer copy while still aiming replaces the content and restarts the countdown.
+        // A newer copy while still aiming replaces the content and restarts the countdown. Once the
+        // ball is on its way out, the copy stays in the backend and gets a ball of its own afterwards.
         if (stageRef.current !== "aiming") return;
         const previous = pendingRef.current?.image_path;
         if (previous && previous !== e.payload.image_path) {
@@ -205,9 +212,9 @@ export default function FootballBall({ layout }: { layout: FootballLayout }) {
         void win.setIgnoreCursorEvents(true);
         void save();
       }),
-      win.listen(FOOTBALL_EVENTS.miss, () => {
-        // Kicked wide: nothing to save. Stop catching clicks; "done" then dismisses the capture.
-        stageRef.current = "missed";
+      win.listen(FOOTBALL_EVENTS.noSave, () => {
+        // Kicked wide or expired: nothing to save. Stop catching clicks; "done" dismisses the capture.
+        stageRef.current = "closing";
         void win.setIgnoreCursorEvents(true);
       }),
       win.listen<FootballResult>(FOOTBALL_EVENTS.done, (e) => {

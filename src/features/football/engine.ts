@@ -73,8 +73,8 @@ export interface FootballOptions {
   onBallReady: (x: number, y: number) => void;
   /** The ball was kicked into the goal: save right away (the animation is only decoration). */
   onShot: () => void;
-  /** The ball was kicked but will not go in: stop taking input; nothing is saved. */
-  onMiss: () => void;
+  /** This ball will not be saved (kicked wide, or it expired): stop taking input. */
+  onNoSave: () => void;
   onDone: (result: FootballResult) => void;
   onSfx: (name: SfxName, value?: number) => void;
   onLearned: () => void;
@@ -652,7 +652,7 @@ export class FootballEngine {
     this.opts.onSfx("kick", 0.75 + 0.35 * D.power);
     this.ring(b.x, b.y, s.r0 * (1 + 0.4 * D.power), "#F97316");
     this.burst(b.x, b.y + s.r0 * 0.7, 6 + Math.round(6 * D.power), -1, ["#A8A29E", "#D6D3D1", "#FAFAF8"], 0.45 + 0.3 * D.power);
-    if (s.miss) this.opts.onMiss();
+    if (s.miss) this.opts.onNoSave();
     else this.opts.onShot();
   }
 
@@ -778,6 +778,7 @@ export class FootballEngine {
     s.snap = null;
     this.press = null;
     this.opts.onTip(null);
+    this.opts.onNoSave();
   }
 
   private finish(result: FootballResult) {

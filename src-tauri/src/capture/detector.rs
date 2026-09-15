@@ -7,6 +7,7 @@ use crate::storage::database::Database;
 use crate::storage::models::CaptureEvent;
 use crate::storage::repository::Repository;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Listener, Manager};
@@ -403,8 +404,22 @@ fn handle_auto_save(app: &AppHandle, data: serde_json::Value) {
     }
 }
 
-/// Store pending capture data in AppState for the bubble window to retrieve.
-fn store_pending_capture(app: &AppHandle, data: &serde_json::Value, cleanup_replaced: bool) {
+/// Numbers each pending capture, so a bubble can say which one it finished with.
+static NEXT_PENDING_ID: AtomicU64 = AtomicU64::new(1);
+/// A bubble show is already on its way; it will pick up the newest pending capture.
+static BUBBLE_SHOW_SCHEDULED: AtomicBool = AtomicBool::new(false);
+
+/// Store pending capture data in AppState for the bubble window to retrieve. Returns the data
+/// stamped with its `pending_id`, which is what the bubble gets to see.
+fn store_pending_capture(
+    app: &AppHandle,
+    data: &serde_json::Value,
+    cleanup_replaced: bool,
+) -> serde_json::Value {
+    let mut data = data.clone();
+    if let Some(fields) = data.as_object_mut() {
+        fields.insert("pending_id".into(), NEXT_PENDING_ID.fetch_add(1, Ordering::Relaxed).into());
+    }
     let pending_arc = app.state::<AppState>().pending_capture.clone();
     let guard = pending_arc.lock();
     if let Ok(mut pending) = guard {
@@ -415,6 +430,7 @@ fn store_pending_capture(app: &AppHandle, data: &serde_json::Value, cleanup_repl
         }
         *pending = Some(data.clone());
     }
+    data
 }
 
 /// Make the window fully transparent on macOS (no opaque background).
@@ -841,6 +857,40 @@ pub fn show_football_ball_window(app: &AppHandle, x: f64, y: f64, size: f64) -> 
     Ok(())
 }
 
+/// Shows the bubble for the stored pending capture a moment later, once the previous bubble and
+/// its football field are gone (macOS window APIs must then run on the main thread). Only one
+/// show is scheduled at a time, and the bubble picks up whichever capture is newest by then.
+pub fn schedule_bubble_window(app: &AppHandle) {
+    if BUBBLE_SHOW_SCHEDULED.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(150));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while app.get_webview_window("bubble").is_some() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        wait_for_football_field_teardown(&app);
+        let app_main = app.clone();
+        let queued = app.run_on_main_thread(move || {
+            BUBBLE_SHOW_SCHEDULED.store(false, Ordering::SeqCst);
+            let waiting = app_main
+                .state::<AppState>()
+                .pending_capture
+                .lock()
+                .map(|pending| pending.is_some())
+                .unwrap_or(false);
+            if waiting {
+                show_bubble_window(&app_main);
+            }
+        });
+        if queued.is_err() {
+            BUBBLE_SHOW_SCHEDULED.store(false, Ordering::SeqCst);
+        }
+    });
+}
+
 /// Dynamically create and show the bubble window at the bottom-right of the screen.
 /// If a bubble window already exists, close it first to avoid duplicates.
 fn show_bubble_window(app: &AppHandle) {
@@ -1045,10 +1095,12 @@ impl CaptureDetector {
                     if capture_mode == "confirm" {
                         let bubble_exists = app_for_clipboard.get_webview_window("bubble").is_some();
                         // Store pending data in AppState so BubbleView can retrieve it
-                        store_pending_capture(&app_for_clipboard, &data, !bubble_exists);
+                        let data = store_pending_capture(&app_for_clipboard, &data, !bubble_exists);
 
                         // If bubble already open, just emit event — let frontend decide
-                        // whether to accept (circle mode) or ignore (expanded mode)
+                        // whether to accept (circle mode) or ignore (expanded mode). A football
+                        // ball on its way out ignores it and dismisses with its own pending_id,
+                        // so this capture stays stored and gets a bubble of its own afterwards.
                         if bubble_exists {
                             log::info!("Bubble window already open, emitting capture:pending for frontend to handle");
                             if let Err(e) = app_for_clipboard.emit("capture:pending", &data) {
@@ -1063,18 +1115,7 @@ impl CaptureDetector {
                             log::error!("Failed to emit capture:pending: {}", e);
                         }
 
-                        // Show the bubble window on the main thread after a short delay.
-                        // macOS window APIs (setHasShadow, setBackgroundColor, etc.)
-                        // MUST be called from the main thread.
-                        let app_bubble = app_for_clipboard.clone();
-                        std::thread::spawn(move || {
-                            std::thread::sleep(std::time::Duration::from_millis(150));
-                            wait_for_football_field_teardown(&app_bubble);
-                            let app_main = app_bubble.clone();
-                            let _ = app_bubble.run_on_main_thread(move || {
-                                show_bubble_window(&app_main);
-                            });
-                        });
+                        schedule_bubble_window(&app_for_clipboard);
                     } else {
                         handle_auto_save(&app_for_clipboard, data);
                     }

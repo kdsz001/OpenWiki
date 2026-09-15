@@ -49,8 +49,8 @@ export const FOOTBALL_EVENTS = {
   failed: "football:failed",
   /** field → ball: the ball was kicked into the goal, save now */
   shot: "football:shot",
-  /** field → ball: the ball was kicked but will not go in; stop taking input, nothing is saved */
-  miss: "football:miss",
+  /** field → ball: this ball will not be saved (kicked wide, or it expired); stop taking input */
+  noSave: "football:no-save",
   /** field → ball: animation finished (payload: FootballResult) */
   done: "football:done",
   /** field → ball: play a sound (only the ball window gets the user gesture audio needs) */
