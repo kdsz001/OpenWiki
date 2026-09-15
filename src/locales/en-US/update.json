@@ -37,7 +37,10 @@
     "autoCheckHint": "Silently checks GitHub for a new version each time the app starts",
     "checkNow": "Check for updates now",
     "viewReleases": "View release notes ↗",
-    "checkFailed": "Check failed: {{error}}"
+    "checkFailed": "Check failed: {{error}}",
+    "downloading": "Downloading v{{version}}…",
+    "downloadingPercent": "Downloading v{{version}} · {{percent}}%",
+    "readyHint": "v{{version}} is downloaded. Installing it restarts OpenWiki"
   },
   "whatsNew": {
     "eyebrow": "New",

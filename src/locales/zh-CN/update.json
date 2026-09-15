@@ -37,7 +37,10 @@
     "autoCheckHint": "每次启动应用时静默检查 GitHub 是否有新版本",
     "checkNow": "立即检查更新",
     "viewReleases": "查看发布记录 ↗",
-    "checkFailed": "检查失败：{{error}}"
+    "checkFailed": "检查失败：{{error}}",
+    "downloading": "正在下载 v{{version}}…",
+    "downloadingPercent": "正在下载 v{{version}} · {{percent}}%",
+    "readyHint": "v{{version}} 已下载好，安装后会自动重启"
   },
   "whatsNew": {
     "eyebrow": "新玩法",
