@@ -11,7 +11,9 @@ import {
   Info,
   RefreshCcw,
   CheckCircle2,
+  Download,
   ExternalLink,
+  Loader2,
   Stethoscope,
   ShieldCheck,
   ShieldAlert,
@@ -25,6 +27,7 @@ import {
   type UpdateInfo,
   type UpdateSettings,
 } from "../../services/updateService";
+import { useUpdateStore } from "../../stores/updateStore";
 import {
   getAutomationStatus,
   openAutomationSettings,
@@ -273,6 +276,24 @@ export function SettingsView() {
   const [latestInfo, setLatestInfo] = useState<UpdateInfo | null>(null);
   const [checkResult, setCheckResult] = useState<"up-to-date" | "error" | null>(null);
   const [checkError, setCheckError] = useState<string>("");
+  const updateInfo = useUpdateStore((s) => s.info);
+  const updatePhase = useUpdateStore((s) => s.phase);
+  const updateProgress = useUpdateStore((s) => s.progress);
+  const updateFailure = useUpdateStore((s) => s.failure);
+  const updateError = useUpdateStore((s) => s.error);
+  const prepareUpdate = useUpdateStore((s) => s.prepare);
+  const installUpdate = useUpdateStore((s) => s.install);
+  const retryUpdate = useUpdateStore((s) => s.retry);
+  const setUpdateInlineVisible = useUpdateStore((s) => s.setInlineVisible);
+  const shownLatest = latestInfo ?? updateInfo;
+  const updatePercent = updateProgress === null ? null : Math.round(updateProgress * 100);
+
+  // While this page shows the update state, the corner dialog stays away.
+  useEffect(() => {
+    if (activeCategory !== "about") return;
+    setUpdateInlineVisible(true);
+    return () => setUpdateInlineVisible(false);
+  }, [activeCategory, setUpdateInlineVisible]);
 
   // Load update settings once (current version + auto-check toggle state)
   useEffect(() => {
@@ -296,11 +317,8 @@ export function SettingsView() {
       const info = await checkForUpdateManual();
       if (info) {
         setLatestInfo(info);
-        // Ask the top-level UpdateBanner to render as well, for consistency
-        // with what the user sees from the background startup check.
-        window.dispatchEvent(
-          new CustomEvent<UpdateInfo>("update-available-manual", { detail: info }),
-        );
+        // Download it right away; this page shows the progress and then the install button.
+        prepareUpdate(info);
       } else {
         setLatestInfo(null);
         setCheckResult("up-to-date");
@@ -342,6 +360,16 @@ export function SettingsView() {
       await openExternal(updateSettings.releases_url);
     } catch (e) {
       console.error("[update] failed to open releases page:", e);
+    }
+  };
+
+  const handleOpenUpdatePage = async () => {
+    const url = updateInfo?.url ?? updateSettings?.releases_url;
+    if (!url) return;
+    try {
+      await openExternal(url);
+    } catch (e) {
+      console.error("[update] failed to open the release page:", e);
     }
   };
 
@@ -1034,9 +1062,9 @@ export function SettingsView() {
             </SettingRow>
 
             <SettingRow label={tUpdate("settings.latestVersion")}>
-              {latestInfo ? (
+              {shownLatest ? (
                 <span className="text-sm font-mono text-orange-600 dark:text-orange-400 font-semibold">
-                  v{latestInfo.version}
+                  v{shownLatest.version}
                 </span>
               ) : checkResult === "up-to-date" ? (
                 <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
@@ -1079,21 +1107,81 @@ export function SettingsView() {
             )}
 
             <div className="p-4 flex flex-col gap-2">
-              <button
-                onClick={handleCheckNow}
-                disabled={checking}
-                className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-lg
-                           bg-orange-500 text-white hover:bg-orange-600
-                           disabled:bg-gray-300 dark:disabled:bg-white/[0.06]
-                           disabled:text-gray-400 dark:disabled:text-slate-500
-                           disabled:cursor-not-allowed transition-colors"
-              >
-                <RefreshCcw className={`w-3.5 h-3.5 ${checking ? "animate-spin" : ""}`} />
-                {checking ? tUpdate("settings.checking") : tUpdate("settings.checkNow")}
-              </button>
+              {updatePhase === "ready" && updateInfo && (
+                <p className="text-xs text-gray-500 dark:text-slate-400">
+                  {tUpdate("settings.readyHint", { version: updateInfo.version })}
+                </p>
+              )}
+              {updatePhase === "failed" && (
+                <p className="text-xs text-red-500 dark:text-red-400 break-words">
+                  {tUpdate(updateFailure === "install" ? "dialog.installFailedBody" : "dialog.downloadFailedBody", {
+                    error: updateError,
+                  })}
+                </p>
+              )}
+
+              {updatePhase === "downloading" && updateInfo ? (
+                <div
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={updatePercent ?? undefined}
+                  className="relative w-full overflow-hidden rounded-lg py-2 text-center text-sm font-medium
+                             bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300"
+                >
+                  <div
+                    className={`absolute inset-y-0 left-0 bg-orange-200/70 dark:bg-orange-500/25 transition-[width] duration-300
+                                ${updatePercent === null ? "w-full motion-safe:animate-pulse" : ""}`}
+                    style={updatePercent === null ? undefined : { width: `${updatePercent}%` }}
+                  />
+                  <span className="relative inline-flex items-center gap-2">
+                    <Download className="w-3.5 h-3.5" />
+                    {updatePercent === null
+                      ? tUpdate("settings.downloading", { version: updateInfo.version })
+                      : tUpdate("settings.downloadingPercent", { version: updateInfo.version, percent: updatePercent })}
+                  </span>
+                </div>
+              ) : updatePhase === "ready" || updatePhase === "installing" ? (
+                <button
+                  onClick={() => void installUpdate()}
+                  disabled={updatePhase === "installing"}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-lg
+                             bg-orange-500 text-white hover:bg-orange-600
+                             disabled:opacity-75 disabled:cursor-wait transition-colors"
+                >
+                  {updatePhase === "installing" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Download className="w-3.5 h-3.5" />
+                  )}
+                  {updatePhase === "installing" ? tUpdate("dialog.installing") : tUpdate("dialog.install")}
+                </button>
+              ) : updatePhase === "failed" ? (
+                <button
+                  onClick={retryUpdate}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-lg
+                             bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                >
+                  <RefreshCcw className="w-3.5 h-3.5" />
+                  {tUpdate("dialog.retryDownload")}
+                </button>
+              ) : (
+                <button
+                  onClick={handleCheckNow}
+                  disabled={checking}
+                  className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-lg
+                             bg-orange-500 text-white hover:bg-orange-600
+                             disabled:bg-gray-300 dark:disabled:bg-white/[0.06]
+                             disabled:text-gray-400 dark:disabled:text-slate-500
+                             disabled:cursor-not-allowed transition-colors"
+                >
+                  <RefreshCcw className={`w-3.5 h-3.5 ${checking ? "animate-spin" : ""}`} />
+                  {checking ? tUpdate("settings.checking") : tUpdate("settings.checkNow")}
+                </button>
+              )}
 
               <button
-                onClick={handleOpenReleases}
+                onClick={updatePhase === "failed" ? handleOpenUpdatePage : handleOpenReleases}
                 className="w-full flex items-center justify-center gap-2 py-2 text-sm font-medium rounded-lg
                            border text-gray-600 dark:text-gray-300
                            border-gray-200/50 dark:border-white/[0.08]
@@ -1101,7 +1189,7 @@ export function SettingsView() {
                            hover:bg-white/70 dark:hover:bg-white/[0.08] transition-colors"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                {tUpdate("settings.viewReleases")}
+                {updatePhase === "failed" ? tUpdate("dialog.downloadFallback") : tUpdate("settings.viewReleases")}
               </button>
 
               {checkResult === "error" && (

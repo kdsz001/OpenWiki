@@ -1,166 +1,46 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open as openExternal } from "@tauri-apps/plugin-shell";
-import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import { useTranslation } from "react-i18next";
 import { CheckCircle2, Download, Loader2, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { type UpdateInfo } from "../../services/updateService";
-
-type PrepareState = "idle" | "preparing" | "ready" | "installing" | "failed";
-type FailureStage = "download" | "install" | null;
+import { useUpdateStore } from "../../stores/updateStore";
 
 /**
- * Silent update preparer + restart confirmation dialog.
+ * Restart confirmation for a downloaded update, in the corner of any page.
  *
- * Notification source is the existing GitHub-Releases polling backend
- * (`src-tauri/src/update/mod.rs`). Once a newer version is detected, we
- * quietly download it through `tauri-plugin-updater`; only after the update
- * package is ready do we ask the user whether to install and relaunch.
+ * The background GitHub Releases check (`src-tauri/src/update/mod.rs`) reports a newer version
+ * and the update store downloads it quietly. Only once the package is ready (or the download
+ * failed) does this dialog ask the user. Settings → App updates shows the same state inline, so
+ * the dialog stays away while that page is open.
  */
 export function UpdateBanner() {
   const { t } = useTranslation("update");
-  const [info, setInfo] = useState<UpdateInfo | null>(null);
-  const [downloadedUpdate, setDownloadedUpdate] = useState<Update | null>(null);
-  const [prepareState, setPrepareState] = useState<PrepareState>("idle");
-  const [failureStage, setFailureStage] = useState<FailureStage>(null);
-  const [errorMsg, setErrorMsg] = useState<string>("");
-  const [downloadAttempt, setDownloadAttempt] = useState(0);
-  const preparingVersionRef = useRef<string | null>(null);
+  const info = useUpdateStore((s) => s.info);
+  const phase = useUpdateStore((s) => s.phase);
+  const failure = useUpdateStore((s) => s.failure);
+  const error = useUpdateStore((s) => s.error);
+  const inlineVisible = useUpdateStore((s) => s.inlineVisible);
+  const dialogDismissed = useUpdateStore((s) => s.dialogDismissed);
+  const prepare = useUpdateStore((s) => s.prepare);
+  const install = useUpdateStore((s) => s.install);
+  const retry = useUpdateStore((s) => s.retry);
+  const dismissDialog = useUpdateStore((s) => s.dismissDialog);
 
   useEffect(() => {
-    const unlisten = listen<UpdateInfo>("update-available", (event) => {
-      setInfo(event.payload);
-    });
-
-    const manualHandler = (e: Event) => {
-      const ce = e as CustomEvent<UpdateInfo>;
-      if (ce.detail) setInfo(ce.detail);
-    };
-    window.addEventListener("update-available-manual", manualHandler);
-
+    const unlisten = listen<UpdateInfo>("update-available", (event) => prepare(event.payload));
     return () => {
       unlisten.then((fn) => fn());
-      window.removeEventListener("update-available-manual", manualHandler);
     };
-  }, []);
+  }, [prepare]);
 
-  useEffect(() => {
-    if (!info || preparingVersionRef.current === info.version) {
-      return;
-    }
-
-    let cancelled = false;
-    preparingVersionRef.current = info.version;
-    setPrepareState("preparing");
-    setFailureStage(null);
-    setErrorMsg("");
-
-    const prepareUpdate = async () => {
-      const update = await check();
-      if (!update) {
-        throw new Error("Update package is not available");
-      }
-
-      if (cancelled) {
-        await update.close().catch((err) => {
-          console.error("[update] failed to close cancelled update:", err);
-        });
-        return;
-      }
-
-      try {
-        await update.download();
-      } catch (err) {
-        await update.close().catch((closeErr) => {
-          console.error("[update] failed to close unsuccessful download:", closeErr);
-        });
-        throw err;
-      }
-
-      if (cancelled) {
-        await update.close().catch((err) => {
-          console.error("[update] failed to close cancelled download:", err);
-        });
-        return;
-      }
-
-      setDownloadedUpdate(update);
-      setFailureStage(null);
-      setPrepareState("ready");
-    };
-
-    prepareUpdate().catch((err) => {
-      console.error("[update] background download failed:", err);
-      if (!cancelled) {
-        preparingVersionRef.current = null;
-        setFailureStage("download");
-        setPrepareState("failed");
-        setErrorMsg(err instanceof Error ? err.message : String(err));
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [info, downloadAttempt]);
-
-  if (!info || prepareState === "idle" || prepareState === "preparing") {
+  if (!info || inlineVisible || dialogDismissed || (phase !== "ready" && phase !== "installing" && phase !== "failed")) {
     return null;
   }
 
-  const handleInstall = async () => {
-    setPrepareState("installing");
-    setFailureStage(null);
-    setErrorMsg("");
-    try {
-      if (!downloadedUpdate) {
-        throw new Error("Update package is not ready");
-      }
-      await downloadedUpdate.install();
-      await relaunch();
-    } catch (err) {
-      console.error("[update] install failed:", err);
-      setFailureStage("install");
-      setPrepareState("failed");
-      setErrorMsg(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const handleRetryDownload = async () => {
-    if (downloadedUpdate) {
-      try {
-        await downloadedUpdate.close();
-      } catch (err) {
-        console.error("[update] failed to close update before retry:", err);
-      }
-    }
-    setDownloadedUpdate(null);
-    preparingVersionRef.current = null;
-    setFailureStage(null);
-    setPrepareState("preparing");
-    setErrorMsg("");
-    setDownloadAttempt((attempt) => attempt + 1);
-  };
-
-  const handleClose = () => {
-    if (prepareState === "installing") {
-      return;
-    }
-
-    if (downloadedUpdate) {
-      downloadedUpdate.close().catch((err) => {
-        console.error("[update] failed to close downloaded update:", err);
-      });
-    }
-    setDownloadedUpdate(null);
-    preparingVersionRef.current = null;
-    setPrepareState("idle");
-    setFailureStage(null);
-    setInfo(null);
-    setErrorMsg("");
-  };
+  const installing = phase === "installing";
+  const failed = phase === "failed";
 
   const handleViewNotes = async () => {
     try {
@@ -170,22 +50,17 @@ export function UpdateBanner() {
     }
   };
 
-  const title =
-    prepareState === "failed"
-      ? t("dialog.failedTitle")
-      : t("dialog.title", { version: info.version });
+  const title = failed ? t("dialog.failedTitle") : t("dialog.title", { version: info.version });
 
-  const description =
-    prepareState === "failed"
-      ? t(failureStage === "install" ? "dialog.installFailedBody" : "dialog.downloadFailedBody", { error: errorMsg })
-      : t("dialog.body", { version: info.version });
+  const description = failed
+    ? t(failure === "install" ? "dialog.installFailedBody" : "dialog.downloadFailedBody", { error })
+    : t("dialog.body", { version: info.version });
 
-  const primaryLabel =
-    prepareState === "installing"
-      ? t("dialog.installing")
-      : prepareState === "failed"
-      ? t("dialog.retryDownload")
-      : t("dialog.install");
+  const primaryLabel = installing
+    ? t("dialog.installing")
+    : failed
+    ? t("dialog.retryDownload")
+    : t("dialog.install");
 
   return (
     <motion.div
@@ -208,8 +83,8 @@ export function UpdateBanner() {
                    p-7"
       >
         <button
-          onClick={handleClose}
-          disabled={prepareState === "installing"}
+          onClick={dismissDialog}
+          disabled={installing}
           aria-label={t("dialog.close")}
           className="absolute right-4 top-4 rounded-lg p-1.5 text-stone-400
                      transition-colors hover:bg-stone-100 hover:text-stone-700
@@ -223,7 +98,7 @@ export function UpdateBanner() {
           className="mb-5 flex h-12 w-12 items-center justify-center rounded-xl
                      bg-orange-50 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300"
         >
-          {prepareState === "failed" ? (
+          {failed ? (
             <Download className="h-6 w-6" strokeWidth={2.2} />
           ) : (
             <CheckCircle2 className="h-6 w-6" strokeWidth={2.2} />
@@ -246,8 +121,8 @@ export function UpdateBanner() {
 
         <div className="flex gap-2.5">
           <button
-            onClick={handleClose}
-            disabled={prepareState === "installing"}
+            onClick={dismissDialog}
+            disabled={installing}
             className="flex-1 rounded-lg border border-stone-200 bg-white py-2.5
                        text-sm font-medium text-stone-600 transition-colors
                        hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50
@@ -258,29 +133,27 @@ export function UpdateBanner() {
           </button>
 
           <button
-            onClick={prepareState === "failed" ? handleRetryDownload : handleInstall}
-            disabled={prepareState === "installing"}
+            onClick={failed ? retry : () => void install()}
+            disabled={installing}
             className="flex-1 rounded-lg bg-orange-500 py-2.5 text-sm font-semibold
                        text-white transition-colors hover:bg-orange-600
                        disabled:cursor-wait disabled:opacity-75
                        flex items-center justify-center gap-2"
           >
-            {prepareState === "installing" && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
+            {installing && <Loader2 className="h-4 w-4 animate-spin" />}
             {primaryLabel}
           </button>
         </div>
 
         <button
           onClick={handleViewNotes}
-          disabled={prepareState === "installing"}
+          disabled={installing}
           className="mt-3 w-full rounded-lg py-2 text-xs font-medium
                      text-stone-500 transition-colors hover:bg-stone-50 hover:text-orange-600
                      disabled:cursor-not-allowed disabled:opacity-50
                      dark:text-stone-400 dark:hover:bg-white/[0.04] dark:hover:text-orange-300"
         >
-          {prepareState === "failed" ? t("dialog.downloadFallback") : t("dialog.view")}
+          {failed ? t("dialog.downloadFallback") : t("dialog.view")}
         </button>
       </div>
     </motion.div>
