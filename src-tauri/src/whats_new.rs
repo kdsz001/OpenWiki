@@ -38,6 +38,11 @@ pub fn prepare(app: &tauri::App, first_run_marker: &str) -> bool {
     if setting(SEEN_KEY).as_deref() == Some(CURRENT) {
         return false;
     }
+    // The football bubble is Mac-only for now, so other platforms skip its announcement. It is
+    // not marked as seen, so a later release that brings football there can still show it.
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
     if !used_before || setting("bubble_style").as_deref() == Some("football") {
         if let Err(e) = repo.update_setting(SEEN_KEY, CURRENT) {
             log::warn!("[whats-new] failed to skip the announcement: {}", e);

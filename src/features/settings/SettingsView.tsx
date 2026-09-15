@@ -510,7 +510,10 @@ export function SettingsView() {
                   { value: "circle", key: "capture.circle" },
                   { value: "bar", key: "capture.bar" },
                   { value: "football", key: "capture.football" },
-                ] as const).map((opt) => (
+                ] as const)
+                  // The football bubble is Mac-only for now: it has not been tested on Windows yet.
+                  .filter((opt) => IS_MAC || opt.value !== "football")
+                  .map((opt) => (
                   <button
                     key={opt.value}
                     onClick={() => setBubbleStyle(opt.value)}

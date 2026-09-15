@@ -933,7 +933,12 @@ fn show_bubble_window(app: &AppHandle) {
         (style, position)
     };
 
-    if bubble_style == "football" && show_football_windows(app, &bubble_position) {
+    // The football bubble is Mac-only for now (not tested on Windows yet); elsewhere it falls
+    // back to the circle bubble below.
+    if cfg!(target_os = "macos")
+        && bubble_style == "football"
+        && show_football_windows(app, &bubble_position)
+    {
         return;
     }
     set_football_layout(app, None);
