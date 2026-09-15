@@ -53,8 +53,8 @@
     "toast": "Football is on. Try it on your next copy",
     "close": "Close",
     "replay": "Play demo",
-    "demoLabel": "Demo: after copying a line, a football appears by the cursor; it is pulled back, released, bounces off the top edge into the goal and is saved",
-    "demoCheer": "Off the wall!",
+    "demoLabel": "Demo: after copying a line, a football appears by the cursor; it is pulled back and released toward the goal, goes in and is saved",
+    "demoCheer": "Nice shot!",
     "demoSaved": "Saved"
   }
 }

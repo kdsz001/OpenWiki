@@ -65,6 +65,10 @@ const unit = (x: number, y: number): Pt => {
   const l = Math.hypot(x, y) || 1;
   return { x: x / l, y: y / l };
 };
+const bez = (p0: Pt, c: Pt, p2: Pt, u: number): Pt => ({
+  x: (1 - u) * (1 - u) * p0.x + 2 * (1 - u) * u * c.x + u * u * p2.x,
+  y: (1 - u) * (1 - u) * p0.y + 2 * (1 - u) * u * c.y + u * u * p2.y,
+});
 
 // A 432x270 mini screen: a document window on the left and a small goal in the bottom-right corner.
 const W = 432;
@@ -102,23 +106,20 @@ const REND = R0 * 0.56;
 const PULL = 30;
 const REST = { x: SEL_END.x + 20, y: SEL_END.y + 20 };
 const LAND = { x: lerp(GOAL.bx0, GOAL.bx1, 0.6), y: lerp(GOAL.by0, GOAL.by1, 0.45) };
-// Bank shot off the top edge: aim at the landing spot mirrored across that edge.
-const MIRROR = { x: LAND.x, y: 2 * R0 - LAND.y };
-const { SHOT, PULLED } = (() => {
-  let shot = unit(MIRROR.x - REST.x, MIRROR.y - REST.y);
-  let pulled = { x: REST.x - shot.x * PULL, y: REST.y - shot.y * PULL };
-  shot = unit(MIRROR.x - pulled.x, MIRROR.y - pulled.y);
-  pulled = { x: REST.x - shot.x * PULL, y: REST.y - shot.y * PULL };
-  return { SHOT: shot, PULLED: pulled };
+// Aimed straight at the goal: pulled back directly away from the landing spot.
+const SHOT = unit(LAND.x - REST.x, LAND.y - REST.y);
+const PULLED = { x: REST.x - SHOT.x * PULL, y: REST.y - SHOT.y * PULL };
+/** Control point of the flight: halfway along the shot and lifted a little, like the app's aimed shot. */
+const ARC = (() => {
+  const d = Math.hypot(LAND.x - PULLED.x, LAND.y - PULLED.y);
+  return { x: PULLED.x + SHOT.x * d * 0.5, y: PULLED.y + SHOT.y * d * 0.5 - d * 0.12 };
 })();
-const BOUNCE = { x: PULLED.x + SHOT.x * ((PULLED.y - R0) / -SHOT.y), y: R0 };
 
-// Timeline in seconds: copy -> ball appears -> pull back -> release -> edge bounce -> goal -> fade.
+// Timeline in seconds: copy -> ball appears -> pull back -> release at the goal -> goal -> fade.
 const TL = (() => {
   const release = 3.8;
   const kickEnd = release + 0.07;
-  const bounce = kickEnd + 0.26;
-  const goal = bounce + 0.56;
+  const goal = kickEnd + 0.62;
   const leave = goal + 2.2;
   const gone = leave + 0.35;
   return {
@@ -131,7 +132,6 @@ const TL = (() => {
     pull: [2.95, 3.7] as const,
     release,
     kickEnd,
-    bounce,
     goal,
     leave,
     gone,
@@ -301,7 +301,7 @@ export class FootballDemo {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     if (this.freeze > 0) {
-      this.freeze -= dt; // hit-stop on the edge bounce and the goal
+      this.freeze -= dt; // hit-stop on the goal
     } else {
       this.advance(dt);
       if (this.clock >= TL.loop) {
@@ -394,11 +394,6 @@ export class FootballDemo {
       this.ring(PULLED.x, PULLED.y, R0 * 1.3, "#F97316");
       this.burst(PULLED.x, PULLED.y + R0 * 0.7, 7, 0, -1, 2.2, ["#A8A29E", "#D6D3D1", "#FAFAF8"], 0.45);
     }
-    if (crossed(TL.bounce)) {
-      this.freeze = 0.04;
-      this.ring(BOUNCE.x, BOUNCE.y, R0 * 0.9, "#FAFAF8");
-      this.burst(BOUNCE.x, BOUNCE.y, 9, 0, 1, 1.8, ["#F97316", "#FDBA74", "#FAFAF8"], 0.7);
-    }
     if (crossed(TL.goal)) {
       Object.assign(this.net, { cx: LAND.x, cy: LAND.y, flash: 1, hold: 0.14 });
       this.net.v += 13.6;
@@ -484,23 +479,15 @@ export class FootballDemo {
     }
     b.resting = false;
     b.rot = (Math.min(t, TL.goal) - TL.kickEnd) * 22;
-    if (t < TL.bounce) {
-      const p = mix(PULLED, BOUNCE, seg(t, TL.kickEnd, TL.bounce));
-      return { ...b, x: p.x, y: p.y, dir: shotDir, sx: 1.14, sy: 1 / 1.14 };
-    }
     if (t < TL.goal) {
-      const k = seg(t, TL.bounce, TL.goal);
+      // Straight at the goal on a low arc, easing out and shrinking into the net like the app's shot
+      const k = seg(t, TL.kickEnd, TL.goal);
       const u = 0.5 * k + 0.5 * (1 - (1 - k) * (1 - k));
-      const p = mix(BOUNCE, LAND, u);
+      const p = bez(PULLED, ARC, LAND, u);
+      const ahead = bez(PULLED, ARC, LAND, Math.min(1, u + 0.02));
+      const dir = u < 0.98 ? Math.atan2(ahead.y - p.y, ahead.x - p.x) : shotDir;
       const stretch = 1 + 0.14 * Math.sin(Math.PI * Math.min(1, k * 2.5));
-      const flight = { ...b, x: p.x, y: p.y, r: lerp(R0, REND, u), dir: Math.atan2(LAND.y - BOUNCE.y, LAND.x - BOUNCE.x), sx: stretch, sy: 1 / stretch, inside: u > 0.86 };
-      const since = t - TL.bounce;
-      if (since < 0.09) {
-        // squashed against the edge it just hit
-        const q = Math.sin(Math.PI * (since / 0.09));
-        return { ...flight, dir: Math.PI / 2, sx: 1 - 0.28 * q, sy: 1 + 0.2 * q };
-      }
-      return flight;
+      return { ...b, x: p.x, y: p.y, r: lerp(R0, REND, u), dir, sx: stretch, sy: 1 / stretch, inside: u > 0.86 };
     }
     if (!this.sim) return null;
     return { ...b, x: this.sim.x, y: this.sim.y, r: REND, inside: true, rot: this.sim.rot, a: 1 - seg(t, TL.leave, TL.gone) };
