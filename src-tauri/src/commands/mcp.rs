@@ -27,12 +27,12 @@ fn fallback_preview(item: &CapturedContent) -> String {
 //
 //  User clicks [连接 Claude Desktop]
 //       │
-//       ├─ check_node_installed()  → which node
-//       ├─ get_mcp_status()        → read config file, check for "xiaoyun" key
+//       ├─ get_mcp_status()        → read config file, check for "openwiki" key
 //       ├─ connect_mcp()           → backup + inject + write config
-//       └─ disconnect_mcp()        → read + remove "xiaoyun" key + write
+//       └─ disconnect_mcp()        → read + remove "openwiki" key + write
 //
-//  Config file: ~/Library/Application Support/Claude/claude_desktop_config.json
+//  The entry makes the AI app start this OpenWiki with --mcp, the read-only server in
+//  mcp_server.rs. Config file: ~/Library/Application Support/Claude/claude_desktop_config.json
 
 const MCP_SERVER_KEY: &str = "openwiki";
 
@@ -76,98 +76,68 @@ impl McpTarget {
 pub struct McpStatus {
     pub connected: bool,
     pub installed: bool,
-    pub node_installed: bool,
     pub config_path: Option<String>,
 }
 
-/// Get the absolute path to xiaoyun's SQLite database.
-fn xiaoyun_db_path() -> Option<String> {
-    let base = dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|h| h.join("Library").join("Application Support")))?;
-    let db_path = base.join("com.openwiki.app").join("openwiki.db");
-    Some(db_path.to_string_lossy().to_string())
+/// The config entry that has the AI app start this OpenWiki as its read-only MCP server.
+fn mcp_server_entry() -> Result<serde_json::Value, String> {
+    let exe = std::env::current_exe().map_err(|e| format!("Cannot locate OpenWiki: {}", e))?;
+    Ok(serde_json::json!({
+        "command": exe.to_string_lossy(),
+        "args": [crate::mcp_server::MCP_ARG]
+    }))
 }
 
-/// Check if Node.js is installed.
-/// Checks common paths because Tauri apps launched from Dock don't inherit shell PATH.
-fn is_node_installed() -> bool {
-    // First try PATH (works when launched from terminal)
-    let checker = if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
+/// Updates the OpenWiki entry in every AI app config that has one, when it differs from what
+/// this copy writes: entries from before 0.3.27 ran a SQLite server that could also change and
+/// delete data, and the path goes stale when OpenWiki moves.
+#[cfg_attr(debug_assertions, allow(dead_code))]
+pub fn refresh_connected_entries() {
+    let entry = match mcp_server_entry() {
+        Ok(entry) => entry,
+        Err(e) => {
+            log::warn!("[mcp] {}", e);
+            return;
+        }
     };
-    if std::process::Command::new(checker)
-        .arg("node")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        return true;
-    }
-    // Check common macOS Node.js locations
-    let common_paths = [
-        #[cfg(target_os = "windows")]
-        r"C:\Program Files\nodejs\node.exe",
-        #[cfg(target_os = "windows")]
-        r"C:\Program Files (x86)\nodejs\node.exe",
-        #[cfg(not(target_os = "windows"))]
-        "/usr/local/bin/node",
-        #[cfg(not(target_os = "windows"))]
-        "/opt/homebrew/bin/node",
-        #[cfg(not(target_os = "windows"))]
-        "/usr/bin/node",
-    ];
-    for path in &common_paths {
-        if std::path::Path::new(path).exists() {
-            return true;
+    for target in [McpTarget::Claude, McpTarget::Openclaw] {
+        let Some(path) = target.config_path() else {
+            continue;
+        };
+        match refresh_entry_in(&path, &entry) {
+            Ok(true) => log::info!(
+                "[mcp] {} now starts OpenWiki's read-only server",
+                target.display_name()
+            ),
+            Ok(false) => {}
+            Err(e) => log::warn!(
+                "[mcp] failed to update the {} config: {}",
+                target.display_name(),
+                e
+            ),
         }
     }
-    // Check nvm
-    if let Some(home) = dirs::home_dir() {
-        let nvm_node = home.join(".nvm/versions/node");
-        if nvm_node.exists() {
-            return true;
-        }
-    }
-    false
 }
 
-/// Find the absolute path to npx for writing into MCP config.
-fn find_npx_path() -> Option<String> {
-    let common_paths = [
-        #[cfg(target_os = "windows")]
-        r"C:\Program Files\nodejs\npx.cmd",
-        #[cfg(target_os = "windows")]
-        r"C:\Program Files (x86)\nodejs\npx.cmd",
-        #[cfg(not(target_os = "windows"))]
-        "/usr/local/bin/npx",
-        #[cfg(not(target_os = "windows"))]
-        "/opt/homebrew/bin/npx",
-        #[cfg(not(target_os = "windows"))]
-        "/usr/bin/npx",
-    ];
-    for path in &common_paths {
-        if std::path::Path::new(path).exists() {
-            return Some(path.to_string());
-        }
+/// Replaces an existing OpenWiki entry in one config file; returns whether it changed.
+fn refresh_entry_in(path: &PathBuf, entry: &serde_json::Value) -> Result<bool, String> {
+    if !path.exists() {
+        return Ok(false);
     }
-    // Check nvm current version
-    if let Some(home) = dirs::home_dir() {
-        let nvm_dir = home.join(".nvm/versions/node");
-        if let Ok(entries) = std::fs::read_dir(&nvm_dir) {
-            // Get the latest version directory
-            let mut versions: Vec<_> = entries.filter_map(|e| e.ok()).collect();
-            versions.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
-            if let Some(latest) = versions.first() {
-                let npx = latest.path().join("bin/npx");
-                if npx.exists() {
-                    return Some(npx.to_string_lossy().to_string());
-                }
-            }
-        }
+    let mut config = read_config(path)?;
+    let Some(current) = config
+        .get_mut("mcpServers")
+        .and_then(|servers| servers.get_mut(MCP_SERVER_KEY))
+    else {
+        return Ok(false);
+    };
+    if current == entry {
+        return Ok(false);
     }
-    None
+    *current = entry.clone();
+    backup_config(path)?;
+    write_config(path, &config)?;
+    Ok(true)
 }
 
 /// Check if a process is running by name.
@@ -227,7 +197,6 @@ pub async fn get_mcp_status(target: McpTarget) -> Result<McpStatus, String> {
         .as_ref()
         .map(|p| p.parent().map(|d| d.exists()).unwrap_or(false))
         .unwrap_or(false);
-    let node_installed = is_node_installed();
 
     let connected = if let Some(ref path) = config_path {
         if path.exists() {
@@ -245,7 +214,6 @@ pub async fn get_mcp_status(target: McpTarget) -> Result<McpStatus, String> {
     Ok(McpStatus {
         connected,
         installed,
-        node_installed,
         config_path: config_path.map(|p| p.to_string_lossy().to_string()),
     })
 }
@@ -254,14 +222,7 @@ pub async fn get_mcp_status(target: McpTarget) -> Result<McpStatus, String> {
 pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
     let name = target.display_name();
 
-    // 1. Check Node.js
-    if !is_node_installed() {
-        return Err(
-            "Node.js is required. Please download and install from https://nodejs.org".to_string(),
-        );
-    }
-
-    // 2. Check config directory
+    // 1. Check config directory
     let config_path = target
         .config_path()
         .ok_or(format!("Cannot determine {} config path", name))?;
@@ -282,10 +243,10 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
         }
     }
 
-    // 3. Get absolute db path
-    let db_path = xiaoyun_db_path().ok_or("Cannot determine OpenWiki database path")?;
+    // 2. The entry that starts this OpenWiki as the read-only server
+    let entry = mcp_server_entry()?;
 
-    // 4. Read or create config
+    // 3. Read or create config
     let mut config = if config_path.exists() {
         // Backup first
         backup_config(&config_path)?;
@@ -298,7 +259,7 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
         serde_json::json!({})
     };
 
-    // 5. Inject xiaoyun MCP entry
+    // 4. Inject the OpenWiki MCP entry
     let mcp_servers = config
         .as_object_mut()
         .ok_or("Config is not a JSON object")?
@@ -309,25 +270,15 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
         *mcp_servers = serde_json::json!({});
     }
 
-    // Find npx absolute path for reliable execution
-    let npx_path = find_npx_path().unwrap_or_else(|| "npx".to_string());
+    mcp_servers
+        .as_object_mut()
+        .unwrap()
+        .insert(MCP_SERVER_KEY.to_string(), entry);
 
-    mcp_servers.as_object_mut().unwrap().insert(
-        MCP_SERVER_KEY.to_string(),
-        serde_json::json!({
-            "command": npx_path,
-            "args": [
-                "-y",
-                "mcp-server-sqlite-npx",
-                db_path
-            ]
-        }),
-    );
-
-    // 6. Write back
+    // 5. Write back
     write_config(&config_path, &config)?;
 
-    // 7. Check if the target app is running
+    // 6. Check if the target app is running
     let msg = if is_process_running(target.process_name()) {
         format!(
             "Connected! Please quit and reopen {} for changes to take effect.",
@@ -340,7 +291,7 @@ pub async fn connect_mcp(target: McpTarget) -> Result<String, String> {
         )
     };
 
-    log::info!("MCP connected: xiaoyun entry added to {} config", name);
+    log::info!("MCP connected: openwiki entry added to {} config", name);
     Ok(msg)
 }
 
@@ -556,19 +507,42 @@ mod tests {
     }
 
     #[test]
-    fn test_xiaoyun_db_path_is_absolute() {
-        if let Some(path) = xiaoyun_db_path() {
-            assert!(
-                PathBuf::from(&path).is_absolute(),
-                "DB path should be absolute: {}",
-                path
-            );
-            assert!(
-                !path.contains('~'),
-                "DB path should not contain tilde: {}",
-                path
-            );
-        }
+    fn test_entry_starts_this_openwiki_as_mcp_server() {
+        let entry = mcp_server_entry().unwrap();
+        let command = PathBuf::from(entry["command"].as_str().unwrap());
+        assert!(command.is_absolute(), "command should be absolute: {:?}", command);
+        assert_eq!(entry["args"], serde_json::json!(["--mcp"]));
+    }
+
+    #[test]
+    fn test_refresh_replaces_old_read_write_entry() {
+        let f = make_temp_config(
+            r#"{"mcpServers": {
+                "openwiki": {"command": "/usr/local/bin/npx", "args": ["-y", "mcp-server-sqlite-npx", "/x/openwiki.db"]},
+                "other-tool": {"command": "other"}
+            }}"#,
+        );
+        let path = f.path().to_path_buf();
+        let entry = mcp_server_entry().unwrap();
+
+        assert!(refresh_entry_in(&path, &entry).unwrap());
+        let config = read_config(&path).unwrap();
+        assert_eq!(config["mcpServers"][MCP_SERVER_KEY], entry);
+        assert_eq!(config["mcpServers"]["other-tool"]["command"], "other");
+
+        // Already current: nothing to write.
+        assert!(!refresh_entry_in(&path, &entry).unwrap());
+    }
+
+    #[test]
+    fn test_refresh_leaves_unconnected_configs_alone() {
+        let f = make_temp_config(r#"{"mcpServers": {"other-tool": {"command": "other"}}}"#);
+        let path = f.path().to_path_buf();
+        let entry = mcp_server_entry().unwrap();
+
+        assert!(!refresh_entry_in(&path, &entry).unwrap());
+        assert!(read_config(&path).unwrap()["mcpServers"].get(MCP_SERVER_KEY).is_none());
+        assert!(!refresh_entry_in(&PathBuf::from("/tmp/nonexistent-openwiki-mcp.json"), &entry).unwrap());
     }
 
     #[test]

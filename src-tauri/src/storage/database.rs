@@ -98,7 +98,7 @@ impl Database {
         Ok(db)
     }
 
-    fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    pub(crate) fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
         let data_dir = dirs::data_dir()
             .ok_or("Could not find data directory")?
             .join("com.openwiki.app");

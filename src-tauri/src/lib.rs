@@ -4,6 +4,7 @@ mod capture;
 mod commands;
 mod export;
 pub mod locale;
+mod mcp_server;
 mod scheduler;
 mod secure_store;
 mod storage;
@@ -23,6 +24,12 @@ const AUTOSTART_ARG: &str = "--autostart";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Started by a connected AI app: answer its read-only queries over stdio, without any window.
+    if std::env::args_os().any(|arg| arg == mcp_server::MCP_ARG) {
+        mcp_server::serve_stdio();
+        return;
+    }
+
     let db = Arc::new(storage::database::Database::new().expect("Failed to initialize database"));
 
     let detector = CaptureDetector::new();
@@ -229,6 +236,11 @@ pub fn run() {
             eprintln!("[openwiki] Starting capture detector...");
             detector.start(app.handle().clone());
             eprintln!("[openwiki] Capture detector started!");
+
+            // --- Keep connected AI apps on this copy's read-only MCP server ---
+            // Skipped in dev builds, which would point them at the build folder.
+            #[cfg(not(debug_assertions))]
+            std::thread::spawn(commands::mcp::refresh_connected_entries);
 
             // --- Background update check (GitHub Releases polling) ---
             // Runs 3s after startup, emits `update-available` if a newer version
