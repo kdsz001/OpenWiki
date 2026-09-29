@@ -111,7 +111,9 @@ impl ClipboardWatcher {
         let interval = self.poll_interval_ms;
 
         std::thread::spawn(move || {
-            let mut last_content_hash: Option<String> = None;
+            // What is on the clipboard now was copied before OpenWiki started; only copies made
+            // from here on are captured.
+            let mut last_content_hash = current_clipboard_hash();
 
             eprintln!(
                 "[openwiki] Clipboard watcher thread started ({}ms)",
@@ -322,6 +324,20 @@ fn detect_frontmost_app_windows() -> String {
             title
         }
     }
+}
+
+/// Fingerprint of what the clipboard holds right now, checked in the same order as the watcher:
+/// an image first, then non-empty text.
+fn current_clipboard_hash() -> Option<String> {
+    let mut clipboard = arboard::Clipboard::new().ok()?;
+    if let Ok(img) = clipboard.get_image() {
+        return Some(compute_image_hash(&img));
+    }
+    clipboard
+        .get_text()
+        .ok()
+        .filter(|text| !text.is_empty())
+        .map(|text| compute_text_hash(&text))
 }
 
 /// Compute a SHA-256 hash for text content (prefixed to distinguish from image hashes).
