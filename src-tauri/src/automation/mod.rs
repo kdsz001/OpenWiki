@@ -178,7 +178,10 @@ pub fn get_automation_status(state: State<'_, AppState>) -> Result<AutomationSna
 ///   3. fail immediately (previously denied at OS level).
 ///
 /// Then we persist the outcome and return it to the frontend.
-#[tauri::command]
+///
+/// async: a plain command runs on the UI thread, and osascript can wait until the user answers
+/// the system dialog.
+#[tauri::command(async)]
 pub fn request_automation_permission(
     state: State<'_, AppState>,
 ) -> Result<AutomationSnapshot, String> {

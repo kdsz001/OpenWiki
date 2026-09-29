@@ -950,7 +950,8 @@ pub fn get_wiki_conversations(
 
 // ===== Tag-based linking =====
 
-#[tauri::command]
+// async: a plain command runs on the UI thread, and this rebuilds the links of every page.
+#[tauri::command(async)]
 pub fn wiki_link_by_tags(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
     let db = state.db.clone();
     let count = wiki_engine::link_pages_by_shared_tags(db)?;

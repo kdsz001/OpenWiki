@@ -136,7 +136,9 @@ fn scan_image_orphans_in(
     })
 }
 
-#[tauri::command]
+// async on the three image commands: a plain command runs on the UI thread, and these walk or
+// move every saved image.
+#[tauri::command(async)]
 pub fn scan_image_orphans(state: State<'_, AppState>) -> Result<OrphanScan, String> {
     scan_image_orphans_in(
         &state.db,
@@ -246,7 +248,7 @@ fn quarantine_image_orphans_in(
     Ok(QuarantineResult { moved, manifests })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn quarantine_image_orphans(
     state: State<'_, AppState>,
     reviewed_paths: Vec<String>,
@@ -328,7 +330,7 @@ fn restore_manifest_in(manifest_path: &Path, root: &Path) -> Result<usize, Strin
     Ok(restored)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn restore_quarantined_images(manifest_path: String) -> Result<usize, String> {
     let manifest = Path::new(&manifest_path);
     let captures = super::image_lifecycle::captures_dir()?;

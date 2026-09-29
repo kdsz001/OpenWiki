@@ -975,7 +975,8 @@ pub fn save_spotlight_content(
     Ok(content)
 }
 
-#[tauri::command]
+// async: a plain command runs on the UI thread, and a folder import saves every file in turn.
+#[tauri::command(async)]
 pub fn import_markdown_files(
     app: tauri::AppHandle,
     state: State<'_, AppState>,
