@@ -3503,7 +3503,7 @@ dependencies = [
 
 [[package]]
 name = "openwiki"
-version = "0.3.25"
+version = "0.3.26"
 dependencies = [
  "aes-gcm",
  "arboard",
