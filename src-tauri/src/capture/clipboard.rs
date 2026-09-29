@@ -332,15 +332,52 @@ fn compute_text_hash(text: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Compute a SHA-256 hash from image metadata (dimensions + first bytes of pixel data).
-/// We sample the data to avoid hashing potentially large image buffers every poll cycle.
+/// Fingerprint of a clipboard image over all of its pixels, so two same-size screenshots that only
+/// differ further down are not taken for the same copy. SipHash takes about 8 ms for a 4K image
+/// where SHA-256 takes about 75 ms, and this runs every poll; the fingerprint is only compared
+/// within this run, so it does not need to be stable or cryptographic.
 fn compute_image_hash(img: &arboard::ImageData) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"img:");
-    hasher.update(img.width.to_le_bytes());
-    hasher.update(img.height.to_le_bytes());
-    // Sample up to 4096 bytes from the image data for a fast fingerprint
-    let sample_len = img.bytes.len().min(4096);
-    hasher.update(&img.bytes[..sample_len]);
-    format!("{:x}", hasher.finalize())
+    use std::hash::{DefaultHasher, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    hasher.write_usize(img.width);
+    hasher.write_usize(img.height);
+    hasher.write(&img.bytes);
+    format!("img:{:016x}", hasher.finish())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compute_image_hash;
+    use std::borrow::Cow;
+
+    fn image(width: usize, height: usize, bytes: Vec<u8>) -> arboard::ImageData<'static> {
+        arboard::ImageData {
+            width,
+            height,
+            bytes: Cow::Owned(bytes),
+        }
+    }
+
+    #[test]
+    fn same_size_images_that_differ_only_at_the_end_get_different_hashes() {
+        let first = vec![7u8; 1920 * 1080 * 4];
+        let mut second = first.clone();
+        *second.last_mut().unwrap() = 8;
+
+        assert_ne!(
+            compute_image_hash(&image(1920, 1080, first)),
+            compute_image_hash(&image(1920, 1080, second))
+        );
+    }
+
+    #[test]
+    fn identical_images_get_the_same_hash() {
+        let pixels = vec![3u8; 64 * 64 * 4];
+
+        assert_eq!(
+            compute_image_hash(&image(64, 64, pixels.clone())),
+            compute_image_hash(&image(64, 64, pixels))
+        );
+    }
 }
