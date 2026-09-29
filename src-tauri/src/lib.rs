@@ -18,6 +18,8 @@ use tauri::Manager;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 const AUTOSTART_DEFAULT_APPLIED_KEY: &str = "autostart_default_applied";
+/// Passed by launch at startup on Windows, so a login launch stays in the tray.
+const AUTOSTART_ARG: &str = "--autostart";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -52,13 +54,16 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
-            None,
+            // Windows opens the main window unless launch at startup started the app (see setup).
+            if cfg!(target_os = "macos") {
+                None
+            } else {
+                Some(vec![AUTOSTART_ARG])
+            },
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcuts(["CmdOrCtrl+Shift+Y", "CmdOrCtrl+Shift+C"])
-                .expect("Failed to parse shortcuts")
                 .with_handler(|app, shortcut, event| {
                     if let tauri_plugin_global_shortcut::ShortcutState::Pressed = event.state {
                         let key = shortcut.key;
@@ -147,15 +152,32 @@ pub fn run() {
                 });
             }
 
+            // --- Global shortcuts ---
+            register_global_shortcuts(app);
+
             // --- System Tray ---
             setup_tray(app)?;
 
             // --- "What's new" card after an update (reads first-run markers before they are written) ---
+            #[cfg(not(target_os = "macos"))]
+            let just_updated = whats_new::updated_since_last_launch(app);
             let show_whats_new = whats_new::prepare(app, AUTOSTART_DEFAULT_APPLIED_KEY);
 
             // --- Launch at startup default ---
+            #[cfg(not(target_os = "macos"))]
+            add_autostart_arg_once(app);
             apply_default_autostart_once(app);
             if show_whats_new {
+                show_main_window(app.handle(), None);
+            }
+
+            // --- Open the main window (Windows) ---
+            // There is no Dock icon to click on Windows, so a launch that only put an icon in the
+            // tray looked like the app never opened (issue #22). Only launch at startup stays in
+            // the tray. The updater restarts the app with the arguments it had, so the first
+            // launch of a new version opens the window even when it carries AUTOSTART_ARG.
+            #[cfg(not(target_os = "macos"))]
+            if just_updated || !std::env::args_os().any(|arg| arg == AUTOSTART_ARG) {
                 show_main_window(app.handle(), None);
             }
 
@@ -458,6 +480,64 @@ fn apply_default_autostart_once(app: &mut tauri::App) {
 
     if let Err(e) = repo.update_setting(AUTOSTART_DEFAULT_APPLIED_KEY, "true") {
         log::warn!("[autostart] failed to persist default marker: {}", e);
+    }
+}
+
+/// Windows: launch at startup entries written before AUTOSTART_ARG existed start the app without
+/// it, which would now open the main window at every login. Rewrites an enabled entry once.
+#[cfg(not(target_os = "macos"))]
+fn add_autostart_arg_once(app: &tauri::App) {
+    const APPLIED_KEY: &str = "autostart_arg_applied";
+    let state: tauri::State<'_, AppState> = app.state();
+    let repo = crate::storage::repository::Repository::new(state.db.clone());
+
+    match repo.get_setting(APPLIED_KEY) {
+        Ok(Some(value)) if value == "true" => return,
+        Ok(_) => {}
+        Err(e) => {
+            log::warn!("[autostart] failed to read argument marker: {}", e);
+            return;
+        }
+    }
+
+    match app.autolaunch().is_enabled() {
+        Ok(true) => {
+            if let Err(e) = app.autolaunch().enable() {
+                log::warn!(
+                    "[autostart] failed to add {} to launch at startup: {}",
+                    AUTOSTART_ARG,
+                    e
+                );
+                return;
+            }
+            log::info!("[autostart] launch at startup now passes {}", AUTOSTART_ARG);
+        }
+        Ok(false) => {}
+        Err(e) => {
+            log::warn!("[autostart] failed to read current status: {}", e);
+            return;
+        }
+    }
+
+    if let Err(e) = repo.update_setting(APPLIED_KEY, "true") {
+        log::warn!("[autostart] failed to persist argument marker: {}", e);
+    }
+}
+
+/// Registers the global shortcuts one at a time. On Windows a shortcut another program already
+/// holds cannot be registered; through the plugin builder that failed the whole startup and the
+/// app quit before showing anything. Now only that shortcut is unavailable.
+fn register_global_shortcuts(app: &tauri::App) {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+
+    for shortcut in ["CmdOrCtrl+Shift+Y", "CmdOrCtrl+Shift+C"] {
+        if let Err(e) = app.global_shortcut().register(shortcut) {
+            log::warn!(
+                "[shortcut] {} is unavailable, another program may be using it: {}",
+                shortcut,
+                e
+            );
+        }
     }
 }
 

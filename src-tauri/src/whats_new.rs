@@ -21,6 +21,15 @@ impl WhatsNewState {
     }
 }
 
+/// Whether the previous launch ran another version, i.e. the app was just updated. Must run
+/// before `prepare`, which records the running version.
+#[cfg(not(target_os = "macos"))]
+pub fn updated_since_last_launch(app: &tauri::App) -> bool {
+    let state: tauri::State<'_, AppState> = app.state();
+    let last = Repository::new(state.db.clone()).get_setting(LAST_VERSION_KEY).ok().flatten();
+    last.is_some_and(|version| version != app.package_info().version.to_string())
+}
+
 /// Decides at startup whether this launch shows the card; returns true when the main window
 /// should open for it. Must run before anything writes first-run markers: only people who used
 /// an earlier version get the card. A fresh install just marks it as seen, and so does someone
