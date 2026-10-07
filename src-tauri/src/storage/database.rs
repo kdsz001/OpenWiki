@@ -418,6 +418,10 @@ impl Database {
         let migration_018 = include_str!("migrations/018_migrate_stale_ai_models.sql");
         conn.execute_batch(migration_018)?;
 
+        // Migration 019: refresh provider-specific model aliases with guarded active settings.
+        let migration_019 = include_str!("migrations/019_refresh_ai_model_aliases.sql");
+        conn.execute_batch(migration_019)?;
+
         log::info!("Database migrations completed successfully");
         Ok(())
     }
@@ -426,6 +430,236 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn set_migration_test_setting(db: &Database, key: &str, value: &str) {
+        db.conn
+            .lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO app_settings (key, value, updated_at) \
+                 VALUES (?1, ?2, '2000-01-01 00:00:00') \
+                 ON CONFLICT(key) DO UPDATE \
+                 SET value = excluded.value, updated_at = excluded.updated_at",
+                [key, value],
+            )
+            .unwrap();
+    }
+
+    fn migration_test_setting(db: &Database, key: &str) -> (String, String) {
+        db.conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT value, updated_at FROM app_settings WHERE key = ?1",
+                [key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn migration_019_refreshes_active_and_saved_provider_models() {
+        let cases = [
+            (
+                "openrouter",
+                "ai_model_openrouter",
+                "qwen/qwen3.8-max",
+                "qwen/qwen3.8-max-0902",
+            ),
+            (
+                "deepseek",
+                "ai_model_deepseek",
+                "deepseek-v4-flash",
+                "deepseek-flash",
+            ),
+            (
+                "deepseek",
+                "ai_model_deepseek",
+                "deepseek-v4-flash-vision-exp",
+                "deepseek-flash",
+            ),
+        ];
+
+        for (provider, saved_key, stale_model, expected_model) in cases {
+            for (active_provider, active_model, saved_model) in [
+                (provider, stale_model, stale_model),
+                ("anthropic", stale_model, stale_model),
+                (provider, "active-custom-model", stale_model),
+                (provider, stale_model, "saved-custom-model"),
+            ] {
+                let db = Database::new_in_memory().unwrap();
+                set_migration_test_setting(&db, "ai_provider", active_provider);
+                set_migration_test_setting(&db, "ai_model", active_model);
+                set_migration_test_setting(&db, saved_key, saved_model);
+
+                db.run_migrations().unwrap();
+
+                let saved = migration_test_setting(&db, saved_key);
+                if saved_model == stale_model {
+                    assert_eq!(saved.0, expected_model);
+                    assert_ne!(saved.1, "2000-01-01 00:00:00");
+                } else {
+                    assert_eq!(saved, (saved_model.into(), "2000-01-01 00:00:00".into()));
+                }
+                let active = migration_test_setting(&db, "ai_model");
+                if active_provider == provider && active_model == stale_model {
+                    assert_eq!(active.0, expected_model);
+                    assert_ne!(active.1, "2000-01-01 00:00:00");
+                } else {
+                    assert_eq!(active, (active_model.into(), "2000-01-01 00:00:00".into()));
+                }
+                assert_eq!(
+                    migration_test_setting(&db, "ai_provider"),
+                    (active_provider.into(), "2000-01-01 00:00:00".into())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn migration_019_preserves_aliases_for_other_providers_and_keys() {
+        let cases = [
+            ("openrouter", "qwen/qwen3.8-max", "ai_model_deepseek"),
+            ("deepseek", "deepseek-v4-flash", "ai_model_openrouter"),
+            (
+                "deepseek",
+                "deepseek-v4-flash-vision-exp",
+                "ai_model_openrouter",
+            ),
+        ];
+        for (model_provider, stale_model, other_provider_key) in cases {
+            for provider in [
+                Some("openrouter"),
+                Some("deepseek"),
+                Some("anthropic"),
+                Some("openai"),
+                Some("gemini"),
+                Some("dashscope"),
+                Some("custom"),
+                Some(""),
+                None,
+            ] {
+                if provider == Some(model_provider) {
+                    continue;
+                }
+                let db = Database::new_in_memory().unwrap();
+                if let Some(provider) = provider {
+                    set_migration_test_setting(&db, "ai_provider", provider);
+                } else {
+                    db.conn
+                        .lock()
+                        .unwrap()
+                        .execute("DELETE FROM app_settings WHERE key = 'ai_provider'", [])
+                        .unwrap();
+                }
+                let keys = [
+                    "ai_model",
+                    other_provider_key,
+                    "ai_model_dashscope",
+                    "ai_model_custom",
+                    "ai_model_openai",
+                    "ai_model_anthropic",
+                    "ai_model_gemini",
+                    "ai_api_key",
+                    "unrelated_setting",
+                ];
+                for key in keys {
+                    set_migration_test_setting(&db, key, stale_model);
+                }
+
+                db.run_migrations().unwrap();
+
+                for key in keys {
+                    assert_eq!(
+                        migration_test_setting(&db, key),
+                        (stale_model.into(), "2000-01-01 00:00:00".into()),
+                        "unexpected change to {key} for provider {provider:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn migration_019_preserves_custom_and_current_models() {
+        for provider in ["openrouter", "deepseek", "dashscope", "custom"] {
+            for model in [
+                "qwen/qwen3.8-max-custom",
+                "deepseek-v4-flash-custom",
+                "deepseek-v4-flash-vision-exp-custom",
+                "my-private-model",
+                "qwen/qwen3.8-max-0902",
+                "deepseek-flash",
+            ] {
+                let db = Database::new_in_memory().unwrap();
+                set_migration_test_setting(&db, "ai_provider", provider);
+                let keys = ["ai_model", "ai_model_openrouter", "ai_model_deepseek"];
+                for key in keys {
+                    set_migration_test_setting(&db, key, model);
+                }
+
+                db.run_migrations().unwrap();
+
+                for key in keys {
+                    assert_eq!(
+                        migration_test_setting(&db, key),
+                        (model.into(), "2000-01-01 00:00:00".into())
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn migration_019_does_not_rewrite_updated_at_on_repeat() {
+        for (provider, saved_key, model, expected) in [
+            (
+                "openrouter",
+                "ai_model_openrouter",
+                "qwen/qwen3.8-max",
+                "qwen/qwen3.8-max-0902",
+            ),
+            (
+                "deepseek",
+                "ai_model_deepseek",
+                "deepseek-v4-flash",
+                "deepseek-flash",
+            ),
+            (
+                "deepseek",
+                "ai_model_deepseek",
+                "deepseek-v4-flash-vision-exp",
+                "deepseek-flash",
+            ),
+        ] {
+            let db = Database::new_in_memory().unwrap();
+            set_migration_test_setting(&db, "ai_provider", provider);
+            set_migration_test_setting(&db, "ai_model", model);
+            set_migration_test_setting(&db, saved_key, model);
+            db.run_migrations().unwrap();
+            let active = migration_test_setting(&db, "ai_model");
+            let saved = migration_test_setting(&db, saved_key);
+            assert_eq!(active.0, expected);
+            assert_eq!(saved.0, expected);
+
+            // Reject any repeated write, even if datetime('now') returns the same second.
+            db.conn
+                .lock()
+                .unwrap()
+                .execute_batch(
+                    "CREATE TRIGGER reject_repeated_model_updates \
+                     BEFORE UPDATE ON app_settings \
+                     WHEN OLD.key IN ('ai_model', 'ai_model_openrouter', 'ai_model_deepseek') \
+                     BEGIN SELECT RAISE(ABORT, 'model settings must not be rewritten'); END;",
+                )
+                .unwrap();
+
+            db.run_migrations().unwrap();
+
+            assert_eq!(migration_test_setting(&db, "ai_model"), active);
+            assert_eq!(migration_test_setting(&db, saved_key), saved);
+        }
+    }
 
     #[test]
     fn migration_018_replaces_stale_provider_models() {

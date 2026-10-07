@@ -645,8 +645,29 @@ struct AnthropicResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct AnthropicContentBlock {
-    text: String,
+#[serde(tag = "type")]
+enum AnthropicContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(other)]
+    Other,
+}
+
+fn parse_anthropic_response(response: &str) -> Result<String, String> {
+    let parsed: AnthropicResponse = serde_json::from_str(response)
+        .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
+    let text: String = parsed
+        .content
+        .into_iter()
+        .filter_map(|block| match block {
+            AnthropicContentBlock::Text { text } => Some(text),
+            AnthropicContentBlock::Other => None,
+        })
+        .collect();
+    if text.trim().is_empty() {
+        return Err("Anthropic response contained no final text; the output budget may have been exhausted by thinking".to_string());
+    }
+    Ok(text)
 }
 
 // --- OpenAI-compatible types ---
@@ -655,8 +676,16 @@ struct AnthropicContentBlock {
 struct OpenAiRequest {
     model: String,
     messages: Vec<ApiMessage>,
-    max_tokens: u32,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<ThinkingConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
     response_format: Option<ResponseFormat>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -678,6 +707,12 @@ struct ResponseFormat {
     format_type: String,
 }
 
+#[derive(Debug, Serialize)]
+struct ThinkingConfig {
+    #[serde(rename = "type")]
+    mode: &'static str,
+}
+
 #[derive(Debug, Deserialize)]
 struct OpenAiResponse {
     choices: Vec<OpenAiChoice>,
@@ -686,6 +721,87 @@ struct OpenAiResponse {
 #[derive(Debug, Deserialize)]
 struct OpenAiChoice {
     message: ApiMessage,
+}
+
+fn build_openai_request(
+    provider: &AnalysisProvider,
+    model: &str,
+    messages: Vec<ApiMessage>,
+    max_tokens: u32,
+    expect_json: bool,
+) -> OpenAiRequest {
+    let openai_model = match provider {
+        AnalysisProvider::OpenAi => Some(model),
+        AnalysisProvider::OpenRouter => model.strip_prefix("openai/"),
+        _ => None,
+    };
+    let is_reasoning = openai_model.is_some_and(|id| {
+        id == "gpt-5"
+            || id.starts_with("gpt-5.")
+            || id.starts_with("gpt-5-")
+            || id.starts_with("gpt-6")
+    });
+    let is_gpt6 = openai_model.is_some_and(|id| id.starts_with("gpt-6"));
+    let is_local = matches!(
+        provider,
+        AnalysisProvider::Custom { .. } | AnalysisProvider::LmStudio { .. }
+    );
+    let effective_max_tokens = if is_local {
+        max_tokens.max(8192)
+    } else {
+        max_tokens
+    };
+    // GPT reasoning models require a completion budget, without sampling.
+    // Fable's always-on thinking does not accept sampling parameters either.
+    let is_fable = matches!(provider, AnalysisProvider::OpenRouter)
+        && model.starts_with("anthropic/claude-fable-5");
+
+    OpenAiRequest {
+        model: model.to_string(),
+        messages,
+        max_tokens: if is_reasoning {
+            None
+        } else {
+            Some(effective_max_tokens)
+        },
+        max_completion_tokens: if is_reasoning {
+            Some(effective_max_tokens)
+        } else {
+            None
+        },
+        temperature: if is_reasoning || is_fable {
+            None
+        } else {
+            Some(0.5)
+        },
+        reasoning_effort: if is_gpt6 { Some("low") } else { None },
+        // DeepSeek defaults to high-effort thinking, which can consume the
+        // entire small summary budget before returning any final text.
+        thinking: if matches!(provider, AnalysisProvider::DeepSeek) {
+            Some(ThinkingConfig { mode: "disabled" })
+        } else {
+            None
+        },
+        response_format: if expect_json && provider_supports_response_format(provider) {
+            Some(ResponseFormat {
+                format_type: "json_object".to_string(),
+            })
+        } else {
+            None
+        },
+        enable_thinking: if matches!(provider, AnalysisProvider::DashScope) {
+            Some(false)
+        } else {
+            None
+        },
+        reasoning_split: if provider_splits_reasoning(provider) {
+            Some(true)
+        } else {
+            None
+        },
+        think: if is_local { Some(false) } else { None },
+        stream: None,
+    }
 }
 
 /// Call the AI API directly to perform attention analysis.
@@ -853,14 +969,7 @@ pub async fn call_analysis_api(
                 return Err(format!("Anthropic API error ({}): {}", status, text));
             }
 
-            let parsed: AnthropicResponse = serde_json::from_str(&text)
-                .map_err(|e| format!("Failed to parse Anthropic response: {}", e))?;
-
-            Ok(parsed
-                .content
-                .first()
-                .map(|c| c.text.clone())
-                .unwrap_or_default())
+            parse_anthropic_response(&text)
         }
         AnalysisProvider::OpenAi
         | AnalysisProvider::OpenRouter
@@ -892,22 +1001,6 @@ pub async fn call_analysis_api(
                 _ => "https://api.openai.com/v1/chat/completions",
             };
 
-            let is_local = matches!(
-                provider,
-                AnalysisProvider::Custom { .. } | AnalysisProvider::LmStudio { .. }
-            );
-
-            // Only providers known to support OpenAI JSON mode receive
-            // `response_format: json_object`. MiniMax/custom/LM Studio are
-            // kept on prompt-only JSON to avoid provider-specific 400s.
-            let response_format = if expect_json && provider_supports_response_format(provider) {
-                Some(ResponseFormat {
-                    format_type: "json_object".to_string(),
-                })
-            } else {
-                None
-            };
-
             let (system_prompt, user_message) = if expect_json {
                 ensure_json_mode_hint(system_prompt, user_message)
             } else {
@@ -926,36 +1019,7 @@ pub async fn call_analysis_api(
                 content: user_message,
             });
 
-            // Thinking models (qwen3, qwen3.5, deepseek-r1) burn large chunks of the
-            // token budget on their internal reasoning trace before emitting the real
-            // answer. Give local providers a much bigger ceiling so the final output
-            // doesn't get truncated.
-            let effective_max_tokens = if is_local {
-                max_tokens.max(8192)
-            } else {
-                max_tokens
-            };
-
-            let enable_thinking = match provider {
-                AnalysisProvider::DashScope => Some(false),
-                _ => None,
-            };
-
-            let body = OpenAiRequest {
-                model: model.to_string(),
-                messages,
-                max_tokens: effective_max_tokens,
-                temperature: 0.5,
-                response_format,
-                enable_thinking,
-                reasoning_split: if provider_splits_reasoning(provider) {
-                    Some(true)
-                } else {
-                    None
-                },
-                think: if is_local { Some(false) } else { None },
-                stream: None,
-            };
+            let body = build_openai_request(provider, model, messages, max_tokens, expect_json);
 
             let mut req = http_client
                 .post(url)
@@ -1280,6 +1344,166 @@ fn process_dashscope_sse_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_anthropic_response_skips_thinking_and_joins_text_blocks() {
+        let response = r#"{"content":[
+            {"type":"thinking","thinking":"private reasoning","signature":"sig"},
+            {"type":"redacted_thinking","data":"hidden"},
+            {"type":"text","text":"{\"summary\":"},
+            {"type":"text","text":"\"answer\"}"}
+        ]}"#;
+        assert_eq!(
+            parse_anthropic_response(response).unwrap(),
+            r#"{"summary":"answer"}"#
+        );
+    }
+
+    #[test]
+    fn test_anthropic_response_preserves_plain_text() {
+        assert_eq!(
+            parse_anthropic_response(r#"{"content":[{"type":"text","text":"answer"}]}"#).unwrap(),
+            "answer"
+        );
+    }
+
+    #[test]
+    fn test_anthropic_response_rejects_missing_final_text() {
+        for response in [
+            r#"{"content":[]}"#,
+            r#"{"content":[{"type":"thinking","thinking":"not the answer"}]}"#,
+            r#"{"content":[{"type":"text","text":"  "}]}"#,
+        ] {
+            assert!(parse_anthropic_response(response)
+                .unwrap_err()
+                .contains("no final text"));
+        }
+        assert!(parse_anthropic_response(r#"{"content":[{"type":"text"}]}"#).is_err());
+    }
+
+    fn serialized_request(
+        provider: &AnalysisProvider,
+        model: &str,
+        expect_json: bool,
+    ) -> serde_json::Value {
+        serde_json::to_value(build_openai_request(
+            provider,
+            model,
+            vec![ApiMessage {
+                role: "user".to_string(),
+                content: "Return json.".to_string(),
+            }],
+            2048,
+            expect_json,
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_openai_reasoning_request_serialization() {
+        for model in [
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-luna",
+            "gpt-5.6",
+            "gpt-5.4",
+            "gpt-5.4-mini",
+            "gpt-5.4-nano",
+            "gpt-5.3-codex",
+            "gpt-5.2",
+        ] {
+            for (provider, id) in [
+                (AnalysisProvider::OpenAi, model.to_string()),
+                (AnalysisProvider::OpenRouter, format!("openai/{model}")),
+            ] {
+                let body = serialized_request(&provider, &id, true);
+                assert_eq!(body["model"], id);
+                assert_eq!(body["max_completion_tokens"], 2048);
+                assert!(body.get("max_tokens").is_none());
+                assert!(body.get("temperature").is_none());
+                assert_eq!(body["response_format"]["type"], "json_object");
+                if model.starts_with("gpt-6") {
+                    assert_eq!(body["reasoning_effort"], "low");
+                } else {
+                    assert!(body.get("reasoning_effort").is_none());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_other_provider_request_parameters_are_preserved() {
+        for (provider, model) in [
+            (AnalysisProvider::OpenAi, "gpt-4o"),
+            (AnalysisProvider::DashScope, "qwen3.8-max"),
+            (AnalysisProvider::DeepSeek, "deepseek-flash"),
+            (AnalysisProvider::OpenRouter, "qwen/qwen3.8-max-0902"),
+        ] {
+            let body = serialized_request(&provider, model, true);
+            assert_eq!(body["max_tokens"], 2048);
+            assert_eq!(body["temperature"], 0.5);
+            assert!(body.get("max_completion_tokens").is_none());
+            assert!(body.get("reasoning_effort").is_none());
+            assert_eq!(body["response_format"]["type"], "json_object");
+        }
+        assert_eq!(
+            serialized_request(&AnalysisProvider::DashScope, "qwen3.8-max", true)
+                ["enable_thinking"],
+            false
+        );
+        for model in ["deepseek-flash", "deepseek-v4-pro"] {
+            assert_eq!(
+                serialized_request(&AnalysisProvider::DeepSeek, model, true)["thinking"]["type"],
+                "disabled"
+            );
+        }
+        for provider in [
+            AnalysisProvider::OpenAi,
+            AnalysisProvider::OpenRouter,
+            AnalysisProvider::DashScope,
+            AnalysisProvider::MiniMax,
+        ] {
+            assert!(serialized_request(&provider, "some-model", true)
+                .get("thinking")
+                .is_none());
+        }
+        let minimax = serialized_request(&AnalysisProvider::MiniMax, "MiniMax-M3", true);
+        assert_eq!(minimax["reasoning_split"], true);
+        assert!(minimax.get("response_format").is_none());
+    }
+
+    #[test]
+    fn test_local_model_names_do_not_trigger_openai_parameters() {
+        for provider in [
+            AnalysisProvider::Custom {
+                base_url: "http://localhost:3000/v1".to_string(),
+            },
+            AnalysisProvider::LmStudio {
+                base_url: "http://localhost:1234/v1".to_string(),
+            },
+        ] {
+            let body = serialized_request(&provider, "gpt-6-astra", true);
+            assert_eq!(body["max_tokens"], 8192);
+            assert_eq!(body["temperature"], 0.5);
+            assert_eq!(body["think"], false);
+            assert!(body.get("max_completion_tokens").is_none());
+            assert!(body.get("response_format").is_none());
+        }
+    }
+
+    #[test]
+    fn test_fable_request_omits_unsupported_sampling() {
+        for model in ["anthropic/claude-fable-5", "anthropic/claude-fable-5.1"] {
+            let body = serialized_request(&AnalysisProvider::OpenRouter, model, true);
+            assert!(body.get("temperature").is_none());
+            assert_eq!(body["max_tokens"], 2048);
+        }
+        assert!(
+            serialized_request(&AnalysisProvider::OpenAi, "gpt-6-astra", false)
+                .get("response_format")
+                .is_none()
+        );
+    }
 
     fn make_valid_briefing_json(evidence_indices: &[usize]) -> String {
         let indices_str = evidence_indices

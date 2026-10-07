@@ -15,6 +15,8 @@ export interface AIModelOption {
 export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   anthropic: [
     { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+    { id: "claude-opus-5-5", label: "Claude Opus 5.5" },
+    { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" },
     { id: "claude-fable-5-1", label: "Claude Fable 5.1" },
     { id: "claude-fable-5", label: "Claude Fable 5" },
     { id: "claude-opus-5", label: "Claude Opus 5" },
@@ -25,6 +27,9 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
   ],
   openai: [
     { id: "auto", label: "Auto" },
+    { id: "gpt-6-astra", label: "GPT-6 Astra" },
+    { id: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+    { id: "gpt-6-luna", label: "GPT-6 Luna" },
     { id: "gpt-5.6", label: "GPT-5.6 Sol" },
     { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
     { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
@@ -45,6 +50,8 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "google/gemma-4-31b-it:free", label: "Gemma 4 31B", free: true, group: "More Free" },
     { id: "google/gemma-4-26b-a4b-it:free", label: "Gemma 4 26B", free: true, group: "More Free" },
     // ── Anthropic ──
+    { id: "anthropic/claude-opus-5.5", label: "Claude Opus 5.5", group: "Anthropic" },
+    { id: "anthropic/claude-sonnet-5.5", label: "Claude Sonnet 5.5", group: "Anthropic" },
     { id: "anthropic/claude-fable-5.1", label: "Claude Fable 5.1", group: "Anthropic" },
     { id: "anthropic/claude-fable-5", label: "Claude Fable 5", group: "Anthropic" },
     { id: "anthropic/claude-opus-5", label: "Claude Opus 5", group: "Anthropic" },
@@ -54,6 +61,9 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6", group: "Anthropic" },
     { id: "anthropic/claude-haiku-4.5", label: "Claude Haiku 4.5", group: "Anthropic" },
     // ── OpenAI ──
+    { id: "openai/gpt-6-astra", label: "GPT-6 Astra", group: "OpenAI" },
+    { id: "openai/gpt-6.1-sol", label: "GPT-6.1 Sol", group: "OpenAI" },
+    { id: "openai/gpt-6-luna", label: "GPT-6 Luna", group: "OpenAI" },
     { id: "openai/gpt-5.6-sol", label: "GPT-5.6 Sol", group: "OpenAI" },
     { id: "openai/gpt-5.6-terra", label: "GPT-5.6 Terra", group: "OpenAI" },
     { id: "openai/gpt-5.6-luna", label: "GPT-5.6 Luna", group: "OpenAI" },
@@ -70,6 +80,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro (Preview)", group: "Google" },
     { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash (Preview)", group: "Google" },
     // ── DeepSeek ──
+    { id: "deepseek/deepseek-v4.1-flash", label: "DeepSeek V4.1 Flash", group: "DeepSeek" },
     { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro", group: "DeepSeek" },
     { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash", group: "DeepSeek" },
     { id: "deepseek/deepseek-v3.2", label: "DeepSeek V3.2", group: "DeepSeek" },
@@ -84,7 +95,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "z-ai/glm-5", label: "GLM 5", group: "Zhipu" },
     // ── Qwen ──
     { id: "qwen/qwen3.8-flash", label: "Qwen3.8 Flash", group: "Qwen" },
-    { id: "qwen/qwen3.8-max", label: "Qwen3.8 Max", group: "Qwen" },
+    { id: "qwen/qwen3.8-max-0902", label: "Qwen3.8 Max", group: "Qwen" },
     { id: "qwen/qwen3.7-max", label: "Qwen3.7 Max", group: "Qwen" },
     { id: "qwen/qwen3.7-plus", label: "Qwen3.7 Plus", group: "Qwen" },
     { id: "qwen/qwen3.6-plus", label: "Qwen3.6 Plus", group: "Qwen" },
@@ -127,7 +138,7 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, AIModelOption[]> = {
     { id: "MiniMax-M2.1", label: "MiniMax M2.1" },
   ],
   deepseek: [
-    { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash（便宜快）" },
+    { id: "deepseek-flash", label: "DeepSeek V4.1 Flash（便宜快）" },
     { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro（旗舰）" },
   ],
   ollama: [
