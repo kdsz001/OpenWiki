@@ -6,6 +6,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["vite", "--port", "5174"],
       "port": 5174
+    },
+    {
+      "name": "website-preview",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "--port", "5183", "website-preview"],
+      "port": 5183
     }
   ]
 }

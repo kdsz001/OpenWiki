@@ -1,0 +1,12 @@
+# OpenWiki
+
+> OpenWiki 是一款开源的桌面端 AI 知识管理工具（macOS / Windows）。复制任何内容，桌面弹出浮窗，你选择收藏，AI 自动整理成个人 Wiki 知识库；支持知识图谱、向知识库提问（Ask）和每周洞察报告。隐私优先，所有数据存储在本地 SQLite 数据库，支持 Claude、OpenAI、Gemini 以及 Ollama / LM Studio 等本地模型。
+
+> OpenWiki is an open-source desktop AI knowledge management tool for macOS and Windows. Copy anything, choose what to keep from a desktop popup, and AI compiles it into a personal wiki — with a knowledge graph, ask-your-knowledge-base Q&A, and weekly insight reports. Privacy-first: all data lives in a local SQLite database. Works with Claude, OpenAI, Gemini, and local models (Ollama, LM Studio).
+
+## 链接 / Links
+
+- [官网 / Website](https://openwiki.pages.dev/)
+- [GitHub](https://github.com/kdsz001/OpenWiki)
+- [下载最新版 / Download latest](https://github.com/kdsz001/OpenWiki/releases/latest)
+- [中文文档 / Chinese docs](https://github.com/kdsz001/OpenWiki/blob/main/README.zh-CN.md)

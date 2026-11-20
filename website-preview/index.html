@@ -1,0 +1,2739 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenWiki — 复制一下就走，它替你记着</title>
+    <meta
+      name="description"
+      content="OpenWiki 是 Mac 与 Windows 桌面端的内容收藏工具。复制文字、图片或链接后，桌面角落弹出一个 10 秒小浮窗，点一下就收藏。AI 自动写摘要、打标签，几天后再提醒你回看。本地存储，免费开源。"
+    />
+    <link rel="canonical" href="https://openwiki.pages.dev/" />
+    <meta name="theme-color" content="#FAFAF8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0C0A09" media="(prefers-color-scheme: dark)" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OpenWiki" />
+    <meta property="og:title" content="OpenWiki — 复制一下就走，它替你记着" />
+    <meta
+      property="og:description"
+      content="复制文字、图片或链接后弹出 10 秒小浮窗，点一下就收藏。AI 写摘要打标签，几天后提醒你回看。Mac 与 Windows，本地存储，免费开源。"
+    />
+    <meta property="og:url" content="https://openwiki.pages.dev/" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" href="./assets/openwiki-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Outfit:wght@500;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* ============================================================
+         OpenWiki 官网样板
+         配色 / 字体 / 圆角 / 间距全部取自项目 DESIGN.md
+         装饰级别：Minimal —— 版式做主要工作，背景用纯色分层（无渐变装饰）
+         ============================================================ */
+
+      :root {
+        color-scheme: light;
+
+        /* 暖灰中性色 */
+        --bg: #fafaf8;
+        --surface: #ffffff;
+        --raised: #f5f5f0;
+        --border: #e7e5e4;
+        --border-strong: #d6d3d1;
+        --text: #1c1917;
+        --text-2: #57534e;
+        --muted: #a8a29e;
+
+        /* 强调色：暖橙 */
+        --accent: #f97316;
+        --accent-hover: #ea580c;
+        --accent-soft: #fff7ed;
+        --accent-line: #fed7aa;
+
+        /* 语义色 */
+        --success: #16a34a;
+        --error: #dc2626;
+
+        /* 圆角分层 */
+        --r-sm: 6px;
+        --r-md: 12px;
+        --r-lg: 16px;
+
+        /* 间距基数 8px */
+        --sp-sm: 8px;
+        --sp-md: 16px;
+        --sp-lg: 24px;
+        --sp-xl: 32px;
+        --sp-2xl: 48px;
+        --sp-3xl: 64px;
+
+        --shell: 1120px;
+
+        --font-display: "Cabinet Grotesk", "Outfit", "Plus Jakarta Sans", sans-serif;
+        --font-body: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+        --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        --font-quiet: "Iowan Old Style", "Palatino Linotype", "Songti SC", "Source Han Serif SC",
+          serif;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --bg: #0c0a09;
+          --surface: #1c1917;
+          --raised: #292524;
+          --border: #3d3935;
+          --border-strong: #514b45;
+          --text: #fafaf8;
+          --text-2: #a8a29e;
+          --muted: #78716c;
+          --accent: #fb923c;
+          --accent-hover: #fdba74;
+          --accent-soft: #431407;
+          --accent-line: #7c2d12;
+          --success: #4ade80;
+          --error: #f87171;
+        }
+      }
+
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 15px;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        max-width: 100%;
+      }
+
+      button {
+        font: inherit;
+        color: inherit;
+        border: 0;
+        background: none;
+        cursor: pointer;
+      }
+
+      :focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+        border-radius: var(--r-sm);
+      }
+
+      h1,
+      h2,
+      h3,
+      h4 {
+        font-family: var(--font-display);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1.12;
+        text-wrap: balance;
+        margin: 0;
+      }
+
+      p {
+        margin: 0;
+      }
+
+      /* ---------- 版心 ---------- */
+
+      .shell {
+        width: 100%;
+        max-width: var(--shell);
+        margin-inline: auto;
+        padding-inline: var(--sp-lg);
+      }
+
+      section {
+        padding-block: clamp(64px, 9vw, 112px);
+      }
+
+      .band {
+        background: var(--surface);
+        border-block: 1px solid var(--border);
+      }
+
+      .eyebrow {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .lede {
+        font-size: 18px;
+        line-height: 1.65;
+        color: var(--text-2);
+        max-width: 62ch;
+      }
+
+      .section-head {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-md);
+        margin-bottom: var(--sp-2xl);
+      }
+
+      .section-head h2 {
+        font-size: clamp(28px, 3.6vw, 40px);
+      }
+
+      /* ---------- 按钮 ---------- */
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        padding: 11px 20px;
+        border-radius: var(--r-sm);
+        font-weight: 600;
+        font-size: 15px;
+        border: 1px solid transparent;
+        transition: background-color 120ms ease-out, border-color 120ms ease-out,
+          transform 80ms ease-out;
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .btn-primary:hover {
+        background: var(--accent-hover);
+      }
+
+      .btn-secondary {
+        background: var(--surface);
+        border-color: var(--border-strong);
+        color: var(--text);
+      }
+
+      .btn-secondary:hover {
+        border-color: var(--text-2);
+      }
+
+      .btn-quiet {
+        padding: 8px 12px;
+        color: var(--text-2);
+        font-size: 14px;
+      }
+
+      .btn-quiet:hover {
+        color: var(--text);
+      }
+
+      .icon {
+        width: 18px;
+        height: 18px;
+        flex: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+        fill: none;
+      }
+
+      .icon-sm {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* ---------- 顶栏 ---------- */
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 50;
+        background: color-mix(in srgb, var(--bg) 88%, transparent);
+        backdrop-filter: saturate(180%) blur(12px);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-md);
+        height: 60px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 17px;
+        letter-spacing: -0.01em;
+      }
+
+      .brand img {
+        width: 28px;
+        height: 28px;
+        border-radius: var(--r-sm);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .nav-links a:not(.btn) {
+        padding: 8px 12px;
+        border-radius: var(--r-sm);
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text-2);
+      }
+
+      .nav-links a:not(.btn):hover {
+        color: var(--text);
+        background: var(--raised);
+      }
+
+      @media (max-width: 760px) {
+        .nav-links a:not(.btn) {
+          display: none;
+        }
+      }
+
+      /* ============================================================
+         HERO
+         概念：大字稳定清晰，四周飘着"正在消失的碎片"——
+         视觉上直接演出「信息在流失，OpenWiki 接住了」
+         ============================================================ */
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        padding-block: clamp(56px, 8vw, 96px) clamp(48px, 6vw, 72px);
+      }
+
+      .hero-inner {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--sp-lg);
+        text-align: center;
+      }
+
+      .hero h1 {
+        position: relative;
+        z-index: 2;
+        font-size: clamp(31px, 7vw, 76px);
+        line-height: 1.06;
+        letter-spacing: -0.035em;
+        /* 断行由下面的 .row 手动控制；balance 会把中文词拆断 */
+        text-wrap: normal;
+      }
+
+      .hero h1 .row {
+        display: block;
+        white-space: nowrap;
+      }
+
+      .hero h1 .dim {
+        color: var(--muted);
+        font-weight: 500;
+      }
+
+      .hero-lede {
+        position: relative;
+        z-index: 2;
+        max-width: 46ch;
+        font-size: 17px;
+        color: var(--text-2);
+      }
+
+      .hero-cta {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+      }
+
+      .hero-note {
+        position: relative;
+        z-index: 2;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .hero-note code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+      }
+
+      /* 飘散的碎片文字 */
+      .debris {
+        position: absolute;
+        inset: -6% 1% 20%;
+        z-index: 1;
+        pointer-events: none;
+      }
+
+      .debris span {
+        position: absolute;
+        font-family: var(--font-quiet);
+        font-style: italic;
+        font-size: clamp(13px, 1.5vw, 19px);
+        white-space: nowrap;
+        color: var(--muted);
+        opacity: 0.5;
+      }
+
+      /* 每片碎片的落点：贴着大字的四周，不压住可读区域。
+         靠右的用 right 定位，窄屏才不会溢出被裁。 */
+      .debris span:nth-child(1) { top: 5%;  left: 0; }
+      .debris span:nth-child(2) { top: 19%; right: 0; }
+      .debris span:nth-child(3) { top: 41%; left: 0; }
+      .debris span:nth-child(4) { top: 53%; right: 1%; }
+      .debris span:nth-child(5) { top: 71%; left: 3%; }
+      .debris span:nth-child(6) { top: 10%; left: 58%; }
+      .debris span:nth-child(7) { top: 79%; right: 8%; }
+      .debris span:nth-child(8) { top: 31%; left: 26%; }
+
+      @media (max-width: 900px) {
+        .debris span:nth-child(6),
+        .debris span:nth-child(8) {
+          display: none;
+        }
+        .debris span {
+          opacity: 0.32;
+        }
+      }
+
+      /* 窄屏没有留白放这些碎片，会压到正文上，整组收掉 */
+      @media (max-width: 720px) {
+        .debris {
+          display: none;
+        }
+      }
+
+      /* 规格条：四格事实，模仿产品说明书的排法 */
+      .specs {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1px;
+        width: 100%;
+        margin-top: var(--sp-2xl);
+        text-align: left;
+        background: var(--border);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        overflow: hidden;
+      }
+
+      .spec {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: var(--sp-md) var(--sp-md) 18px;
+        background: var(--surface);
+      }
+
+      .spec dt {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .spec dd {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .spec small {
+        font-size: 12px;
+        font-weight: 400;
+        color: var(--text-2);
+      }
+
+      @media (max-width: 720px) {
+        .specs {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      /* ---------- 应用窗口 mockup（画出来的，不用截图） ---------- */
+
+      .window {
+        border: 1px solid var(--border);
+        border-radius: var(--r-lg);
+        background: var(--surface);
+        overflow: hidden;
+        box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04), 0 18px 44px -20px rgba(28, 25, 23, 0.18);
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-md);
+        padding: 10px 14px;
+        background: var(--raised);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .lights {
+        display: flex;
+        gap: 6px;
+      }
+
+      .lights i {
+        width: 11px;
+        height: 11px;
+        border-radius: 999px;
+        background: var(--border-strong);
+      }
+
+      .tabs {
+        display: flex;
+        gap: 2px;
+        margin-inline: auto;
+      }
+
+      .tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 12px;
+        border-radius: var(--r-sm);
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-2);
+      }
+
+      .tab[aria-current="true"] {
+        background: var(--accent-soft);
+        color: var(--accent-hover);
+      }
+
+      .window-body {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: var(--sp-md);
+      }
+
+      .filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        padding: 4px 10px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--text-2);
+        background: var(--surface);
+      }
+
+      .chip[data-on="true"] {
+        background: var(--accent-soft);
+        border-color: var(--accent-line);
+        color: var(--accent-hover);
+        font-weight: 600;
+      }
+
+      .item {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+      }
+
+      .item-top {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .kind {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: var(--r-sm);
+        background: var(--raised);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-2);
+      }
+
+      .item-top time {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        margin-left: auto;
+      }
+
+      .item-text {
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      .item-sum {
+        display: flex;
+        gap: var(--sp-sm);
+        padding: 10px 12px;
+        border-radius: var(--r-sm);
+        background: var(--raised);
+        font-size: 13px;
+        color: var(--text-2);
+      }
+
+      .item-sum .icon {
+        color: var(--accent);
+        margin-top: 2px;
+      }
+
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .tag {
+        padding: 2px 9px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent-line);
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--accent-hover);
+      }
+
+      /* ============================================================
+         三步流程：复制 → 浮窗 → 留下
+         中间那格是真在走的 10 秒倒计时
+         ============================================================ */
+
+      .steps {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--sp-lg);
+      }
+
+      @media (max-width: 880px) {
+        .steps {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .step {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: var(--sp-lg);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+      }
+
+      .step-no {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--accent);
+        letter-spacing: 0.1em;
+      }
+
+      .step h3 {
+        font-size: 19px;
+        font-weight: 700;
+      }
+
+      .step p {
+        font-size: 14px;
+        color: var(--text-2);
+      }
+
+      .stage {
+        display: grid;
+        place-items: center;
+        min-height: 132px;
+        padding: var(--sp-md);
+        border-radius: var(--r-sm);
+        background: var(--raised);
+      }
+
+      /* 剪贴板"一闪而过"的示意 */
+      .copyflash {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+        max-width: 240px;
+      }
+
+      .copyflash i {
+        display: block;
+        height: 9px;
+        border-radius: 3px;
+        background: var(--border-strong);
+      }
+
+      .copyflash i:nth-child(1) { width: 94%; }
+      .copyflash i:nth-child(2) { width: 100%; }
+      .copyflash i:nth-child(3) { width: 62%; }
+
+      .copyflash .sel {
+        background: var(--accent);
+        opacity: 0.85;
+      }
+
+      .key {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 8px;
+        border: 1px solid var(--border-strong);
+        border-bottom-width: 2px;
+        border-radius: var(--r-sm);
+        background: var(--surface);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--text-2);
+      }
+
+      /* 倒计时浮窗 */
+      .bubble {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        max-width: 100%;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        box-shadow: 0 10px 28px -14px rgba(28, 25, 23, 0.35);
+      }
+
+      /* 排不开时收起圆角，改成卡片，避免挤出容器 */
+      @media (max-width: 420px) {
+        .bubble {
+          border-radius: var(--r-md);
+        }
+      }
+
+      .ring {
+        position: relative;
+        width: 38px;
+        height: 38px;
+        flex: none;
+      }
+
+      .ring svg {
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+      }
+
+      .ring circle {
+        fill: none;
+        stroke-width: 3;
+      }
+
+      .ring .track {
+        stroke: var(--border);
+      }
+
+      .ring .prog {
+        stroke: var(--accent);
+        stroke-linecap: round;
+        stroke-dasharray: 100.5;
+        stroke-dashoffset: 0;
+      }
+
+      .ring b {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        font-weight: 500;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .bubble-text {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 13px;
+        color: var(--text-2);
+        max-width: 132px;
+      }
+
+      .bubble-save {
+        flex: none;
+        white-space: nowrap;
+        padding: 7px 14px;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .bubble-save:hover {
+        background: var(--accent-hover);
+      }
+
+      .bubble[data-state="saved"] .prog {
+        stroke: var(--success);
+      }
+
+      .saved-note {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--success);
+      }
+
+      /* 留下 / 消失 */
+      .fadeout {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-sm);
+        width: 100%;
+        max-width: 230px;
+      }
+
+      .mini {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-sm);
+        padding: 9px 11px;
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        background: var(--surface);
+        font-size: 12px;
+      }
+
+      .mini .icon-sm {
+        flex: none;
+      }
+
+      .mini[data-keep="true"] .icon-sm {
+        color: var(--success);
+      }
+
+      .mini[data-keep="false"] {
+        color: var(--muted);
+        border-style: dashed;
+        opacity: 0.6;
+      }
+
+      /* ============================================================
+         足球板块：网页上真的能踢一脚
+         ============================================================ */
+
+      .pitch-wrap {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: var(--sp-2xl);
+        align-items: center;
+      }
+
+      @media (max-width: 940px) {
+        .pitch-wrap {
+          grid-template-columns: 1fr;
+          gap: var(--sp-xl);
+        }
+      }
+
+
+      .pitch {
+        position: relative;
+        aspect-ratio: 16 / 11;
+        min-height: 260px;
+        max-width: 100%;
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--raised);
+        overflow: hidden;
+        touch-action: none;
+        cursor: grab;
+        user-select: none;
+      }
+
+      .pitch:active {
+        cursor: grabbing;
+      }
+
+      /* 窄屏：min-height 配 aspect-ratio 会反过来锁死最小宽度，
+         把整页撑出横向滚动条，所以这里让宽度说话。
+         必须写在 .pitch 之后，否则同级特异性下被基础规则盖掉。 */
+      @media (max-width: 760px) {
+        .pitch {
+          min-height: 0;
+          aspect-ratio: 4 / 3;
+        }
+      }
+
+      /* 被复制的那条内容，摆在场上 */
+      .pitch-note {
+        position: absolute;
+        top: 16px;
+        left: 16px;
+        right: 42%;
+        padding: 10px 12px;
+        border: 1px solid var(--border);
+        border-radius: var(--r-sm);
+        background: var(--surface);
+        font-size: 12px;
+        line-height: 1.5;
+        color: var(--text-2);
+        pointer-events: none;
+      }
+
+      .pitch-note strong {
+        display: block;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 500;
+        margin-bottom: 3px;
+      }
+
+      /* 球门：右下角 */
+      .goal {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        width: 34%;
+        height: 30%;
+        border-top: 2px solid var(--accent);
+        border-left: 2px solid var(--accent);
+        border-top-left-radius: var(--r-sm);
+        background: repeating-linear-gradient(
+            90deg,
+            var(--accent-line) 0 1px,
+            transparent 1px 13px
+          ),
+          repeating-linear-gradient(0deg, var(--accent-line) 0 1px, transparent 1px 13px);
+        pointer-events: none;
+      }
+
+      .goal-label {
+        position: absolute;
+        right: 10px;
+        bottom: 8px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--accent-hover);
+        pointer-events: none;
+      }
+
+      .ball {
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        margin: -15px 0 0 -15px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1.5px solid var(--text);
+        pointer-events: none;
+        will-change: transform;
+      }
+
+      /* 足球的黑白块，用 conic 画，不加任何多余装饰 */
+      .ball::before {
+        content: "";
+        position: absolute;
+        inset: 5px;
+        border-radius: 999px;
+        background: conic-gradient(
+          var(--text) 0 18%,
+          transparent 18% 32%,
+          var(--text) 32% 50%,
+          transparent 50% 64%,
+          var(--text) 64% 82%,
+          transparent 82% 100%
+        );
+        opacity: 0.82;
+      }
+
+      .aim {
+        position: absolute;
+        height: 2px;
+        transform-origin: left center;
+        background: repeating-linear-gradient(
+          90deg,
+          var(--accent) 0 6px,
+          transparent 6px 11px
+        );
+        pointer-events: none;
+        opacity: 0;
+      }
+
+      .pitch-hint {
+        position: absolute;
+        left: 50%;
+        bottom: 14px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--text-2);
+        white-space: nowrap;
+        pointer-events: none;
+        transition: opacity 200ms ease-out;
+      }
+
+      .verdict {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        max-width: 60%;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+        box-shadow: 0 14px 34px -18px rgba(28, 25, 23, 0.4);
+        opacity: 0;
+        transform: translateY(-6px);
+        transition: opacity 200ms ease-out, transform 200ms ease-out;
+        pointer-events: none;
+      }
+
+      .verdict[data-show="true"] {
+        opacity: 1;
+        transform: none;
+      }
+
+      .verdict-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .verdict[data-kind="goal"] .verdict-head {
+        color: var(--success);
+      }
+
+      .verdict[data-kind="miss"] .verdict-head {
+        color: var(--muted);
+      }
+
+      .verdict p {
+        margin-top: 4px;
+        font-size: 12px;
+        color: var(--text-2);
+      }
+
+      .pitch-side h2 {
+        font-size: clamp(26px, 3.2vw, 36px);
+      }
+
+      .pitch-side .lede {
+        margin-top: var(--sp-md);
+      }
+
+      .facts {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: var(--sp-lg);
+        padding: 0;
+        list-style: none;
+      }
+
+      .facts li {
+        display: flex;
+        gap: 10px;
+        font-size: 14px;
+        color: var(--text-2);
+      }
+
+      .facts .icon-sm {
+        color: var(--accent);
+        margin-top: 4px;
+      }
+
+      .platform-note {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: var(--sp-lg);
+        padding: 6px 11px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        font-size: 12px;
+        color: var(--text-2);
+        background: var(--surface);
+      }
+
+      .scoreboard {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+      }
+
+      /* ============================================================
+         AI 整理 + 学习提醒
+         ============================================================ */
+
+      .split {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--sp-2xl);
+        align-items: center;
+      }
+
+      @media (max-width: 940px) {
+        .split {
+          grid-template-columns: 1fr;
+          gap: var(--sp-xl);
+        }
+      }
+
+      .split h2 {
+        font-size: clamp(26px, 3.2vw, 36px);
+      }
+
+      .split .lede {
+        margin-top: var(--sp-md);
+        font-size: 17px;
+      }
+
+      /* 提醒卡片演示台 */
+      .desk {
+        position: relative;
+        min-height: 300px;
+        padding: var(--sp-md);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--raised);
+        overflow: hidden;
+      }
+
+      .desk-bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border-radius: var(--r-sm);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--muted);
+        font-family: var(--font-mono);
+      }
+
+      .desk-bar .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--accent);
+      }
+
+      .reminder {
+        position: absolute;
+        top: 52px;
+        right: var(--sp-md);
+        left: var(--sp-md);
+        max-width: 340px;
+        margin-left: auto;
+        padding: var(--sp-md);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+        box-shadow: 0 18px 40px -22px rgba(28, 25, 23, 0.4);
+        transform: translateX(calc(100% + 32px));
+        transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), opacity 260ms ease-out;
+      }
+
+      .reminder[data-in="true"] {
+        transform: none;
+      }
+
+      .reminder[data-gone="true"] {
+        opacity: 0;
+        transform: translateX(calc(100% + 32px));
+      }
+
+      .reminder-head {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--accent-hover);
+      }
+
+      .reminder h3 {
+        margin-top: 10px;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+
+      .reminder-meta {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .reminder-why {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: var(--r-sm);
+        background: var(--raised);
+      }
+
+      .reminder-why strong {
+        display: block;
+        font-size: 11px;
+        color: var(--text-2);
+        margin-bottom: 3px;
+      }
+
+      .reminder-why p {
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--text-2);
+      }
+
+      .reminder-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 14px;
+      }
+
+      .reminder-actions .btn {
+        padding: 7px 13px;
+        font-size: 13px;
+      }
+
+      .desk-toast {
+        position: absolute;
+        left: var(--sp-md);
+        bottom: var(--sp-md);
+        padding: 8px 12px;
+        border-radius: var(--r-sm);
+        background: var(--text);
+        color: var(--bg);
+        font-size: 12px;
+        opacity: 0;
+        transform: translateY(6px);
+        transition: opacity 180ms ease-out, transform 180ms ease-out;
+      }
+
+      .desk-toast[data-show="true"] {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* AI 整理演示 */
+      .analyze {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: var(--sp-md);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+      }
+
+      .analyze-src {
+        padding: 12px;
+        border-radius: var(--r-sm);
+        background: var(--raised);
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-2);
+      }
+
+      .analyze-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        font-size: 13px;
+      }
+
+      .analyze-row .icon-sm {
+        color: var(--accent);
+        margin-top: 3px;
+      }
+
+      .analyze-label {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .typed {
+        min-height: 1.6em;
+      }
+
+      .caret::after {
+        content: "";
+        display: inline-block;
+        width: 1px;
+        height: 1em;
+        margin-left: 2px;
+        vertical-align: -0.15em;
+        background: var(--accent);
+      }
+
+      .tag-pop {
+        opacity: 0;
+        transform: translateY(4px);
+        transition: opacity 180ms ease-out, transform 180ms ease-out;
+      }
+
+      .tag-pop[data-in="true"] {
+        opacity: 1;
+        transform: none;
+      }
+
+      /* ============================================================
+         能接住什么
+         ============================================================ */
+
+      .grid-4 {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: var(--sp-md);
+      }
+
+      @media (max-width: 1000px) {
+        .grid-4 {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .grid-4 {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: var(--sp-lg);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+      }
+
+      .card .icon {
+        color: var(--accent);
+      }
+
+      .card h3 {
+        font-size: 17px;
+        font-weight: 700;
+      }
+
+      .card p {
+        font-size: 14px;
+        color: var(--text-2);
+      }
+
+      .card code {
+        font-family: var(--font-mono);
+        font-size: 12px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--raised);
+      }
+
+      /* ---------- 隐私 ---------- */
+
+      .privacy-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-md);
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .privacy-list li {
+        display: flex;
+        gap: 12px;
+        padding-bottom: var(--sp-md);
+        border-bottom: 1px solid var(--border);
+      }
+
+      .privacy-list li:last-child {
+        border-bottom: 0;
+        padding-bottom: 0;
+      }
+
+      .privacy-list .icon {
+        color: var(--success);
+        flex: none;
+        margin-top: 2px;
+      }
+
+      .privacy-list h3 {
+        font-size: 15px;
+        font-weight: 700;
+        font-family: var(--font-body);
+        letter-spacing: 0;
+      }
+
+      .privacy-list p {
+        margin-top: 3px;
+        font-size: 14px;
+        color: var(--text-2);
+      }
+
+      .db-panel {
+        padding: var(--sp-lg);
+        border: 1px solid var(--border);
+        border-radius: var(--r-md);
+        background: var(--surface);
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.9;
+        color: var(--text-2);
+        overflow-x: auto;
+      }
+
+      .db-panel .k {
+        color: var(--accent);
+      }
+
+      .db-panel .c {
+        color: var(--muted);
+      }
+
+      /* ---------- FAQ ---------- */
+
+      .faq {
+        display: flex;
+        flex-direction: column;
+        border-top: 1px solid var(--border);
+      }
+
+      .faq details {
+        border-bottom: 1px solid var(--border);
+      }
+
+      .faq summary {
+        display: flex;
+        align-items: center;
+        gap: var(--sp-md);
+        padding: 18px 4px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        list-style: none;
+      }
+
+      .faq summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .faq summary .icon-sm {
+        margin-left: auto;
+        color: var(--muted);
+        transition: transform 160ms ease-out;
+      }
+
+      .faq details[open] summary .icon-sm {
+        transform: rotate(45deg);
+      }
+
+      .faq p {
+        padding: 0 4px 20px;
+        font-size: 14px;
+        color: var(--text-2);
+        max-width: 72ch;
+      }
+
+      /* ---------- 底部 ---------- */
+
+      .closer {
+        text-align: center;
+      }
+
+      .closer h2 {
+        font-size: clamp(30px, 4.4vw, 52px);
+        letter-spacing: -0.03em;
+      }
+
+      .closer .lede {
+        margin: var(--sp-md) auto 0;
+      }
+
+      .closer-cta {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin-top: var(--sp-lg);
+      }
+
+      .site-footer {
+        border-top: 1px solid var(--border);
+        padding-block: var(--sp-lg);
+      }
+
+      .footer-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-md);
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .footer-row a:hover {
+        color: var(--text);
+      }
+
+      .footer-links {
+        display: flex;
+        gap: var(--sp-md);
+      }
+
+      /* ============================================================
+         动效
+         默认全部内容可见（无 JS 也完整可读），
+         JS 就绪后才启用进场动画；并尊重 prefers-reduced-motion
+         ============================================================ */
+
+      .js-anim .reveal {
+        opacity: 0;
+        transform: translateY(14px);
+      }
+
+      .js-anim .reveal.in {
+        opacity: 1;
+        transform: none;
+        transition: opacity 620ms cubic-bezier(0.22, 1, 0.36, 1),
+          transform 620ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .js-anim .reveal.in.d1 { transition-delay: 70ms; }
+      .js-anim .reveal.in.d2 { transition-delay: 140ms; }
+      .js-anim .reveal.in.d3 { transition-delay: 210ms; }
+      .js-anim .reveal.in.d4 { transition-delay: 280ms; }
+
+      /* 碎片飘散：上浮 + 淡出，演"信息在流失" */
+      .js-anim .debris span {
+        animation: drift 9s ease-in-out infinite;
+      }
+
+      .js-anim .debris span:nth-child(2) { animation-duration: 11s; animation-delay: -2s; }
+      .js-anim .debris span:nth-child(3) { animation-duration: 10s; animation-delay: -5s; }
+      .js-anim .debris span:nth-child(4) { animation-duration: 12s; animation-delay: -1s; }
+      .js-anim .debris span:nth-child(5) { animation-duration: 9.5s; animation-delay: -7s; }
+      .js-anim .debris span:nth-child(6) { animation-duration: 13s; animation-delay: -4s; }
+      .js-anim .debris span:nth-child(7) { animation-duration: 10.5s; animation-delay: -6s; }
+      .js-anim .debris span:nth-child(8) { animation-duration: 11.5s; animation-delay: -3s; }
+
+      @keyframes drift {
+        0% { transform: translateY(6px); opacity: 0.12; }
+        22% { opacity: 0.5; }
+        70% { opacity: 0.3; }
+        100% { transform: translateY(-26px); opacity: 0; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+        .js-anim .reveal {
+          opacity: 1;
+          transform: none;
+        }
+        .js-anim .debris span {
+          animation: none;
+        }
+        .reminder {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <header class="site-header">
+      <div class="shell nav">
+        <a class="brand" href="#top" aria-label="OpenWiki 首页">
+          <img src="./assets/openwiki-icon.png" alt="" width="28" height="28" />
+          <span>OpenWiki</span>
+        </a>
+        <div class="nav-links">
+          <a href="#how">怎么用</a>
+          <a href="#football">足球玩法</a>
+          <a href="#remind">学习提醒</a>
+          <a href="#privacy">数据在哪</a>
+          <a class="btn btn-secondary" href="https://github.com/kdsz001/OpenWiki" target="_blank" rel="noreferrer">
+            <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 4.44-1.9 4.44-4.28a4.4 4.4 0 0 0-1.16-3A4.1 4.1 0 0 0 17.5 4s-1.2-.36-3.5 1.24a12.3 12.3 0 0 0-5 0C6.7 3.64 5.5 4 5.5 4a4.1 4.1 0 0 0-.84 3.1 4.4 4.4 0 0 0-1.16 3c0 2.38 1.3 3.93 4.44 4.28A3.37 3.37 0 0 0 7 17v4" />
+            </svg>
+            GitHub
+          </a>
+        </div>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ============ HERO ============ -->
+      <section class="hero">
+        <div class="shell hero-inner">
+          <div class="debris" aria-hidden="true">
+            <span>刚复制的那段话</span>
+            <span>上周截的那张图</span>
+            <span>稍后再看的链接</span>
+            <span>忘了存哪儿了</span>
+            <span>剪贴板被下一次覆盖</span>
+            <span>回头一定看</span>
+            <span>那个名字叫什么</span>
+            <span>⌘C</span>
+          </div>
+
+          <p class="eyebrow">Mac 与 Windows 桌面端 · 内容收藏与学习提醒</p>
+          <h1>
+            <span class="row">复制一下就走，</span>
+            <span class="row">它替你记着。</span>
+          </h1>
+          <p class="hero-lede">
+            复制文字、图片或链接后，桌面角落会弹出一个 10 秒的小浮窗。想留下就点一下，不想留就当没看见，它自己会消失。
+          </p>
+
+          <div class="hero-cta">
+            <a class="btn btn-primary" data-download="mac" href="https://github.com/kdsz001/OpenWiki/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v13m0 0 4.5-4.5M12 16l-4.5-4.5" />
+                <path d="M4 20h16" />
+              </svg>
+              Mac 下载
+            </a>
+            <a class="btn btn-secondary" data-download="windows" href="https://github.com/kdsz001/OpenWiki/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v13m0 0 4.5-4.5M12 16l-4.5-4.5" />
+                <path d="M4 20h16" />
+              </svg>
+              Windows 下载
+            </a>
+          </div>
+          <p class="hero-note">
+            免费开源 · 内容存在本机 · <span data-release-status>正在检测最新版本…</span>
+          </p>
+
+          <dl class="specs reveal">
+            <div class="spec">
+              <dt>平台</dt>
+              <dd>Mac + Windows</dd>
+              <small>Apple 芯片与 Intel 都有</small>
+            </div>
+            <div class="spec">
+              <dt>价格</dt>
+              <dd>免费</dd>
+              <small>MIT 开源，没有账号</small>
+            </div>
+            <div class="spec">
+              <dt>存储</dt>
+              <dd>本机数据库</dd>
+              <small>内容不上传服务器</small>
+            </div>
+            <div class="spec">
+              <dt>AI</dt>
+              <dd>用你自己的 Key</dd>
+              <small>Claude、OpenAI、Gemini</small>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <!-- ============ 主窗口 mockup ============ -->
+      <section class="band" style="padding-block: clamp(48px, 6vw, 80px)">
+        <div class="shell">
+          <div class="section-head reveal" style="margin-bottom: var(--sp-xl)">
+            <p class="eyebrow">收藏之后</p>
+            <h2>一条条躺在那儿，都已经整理好了。</h2>
+            <p class="lede">
+              每条内容进来，AI 会顺手写一句摘要、打上标签。找东西的时候按类型筛，或者直接搜。
+            </p>
+          </div>
+
+          <div class="window reveal d1">
+            <div class="titlebar">
+              <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="tabs">
+                <span class="tab" aria-current="true">
+                  <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M9 3h6v3H9z" />
+                    <path d="M8 6H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2" />
+                    <path d="M8 12h8M8 16h5" />
+                  </svg>
+                  内容
+                </span>
+                <span class="tab">
+                  <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2" />
+                  </svg>
+                  设置
+                </span>
+              </div>
+            </div>
+
+            <div class="window-body">
+              <div class="filters">
+                <span class="chip" data-on="true">全部</span>
+                <span class="chip">文本</span>
+                <span class="chip">图片</span>
+                <span class="chip">链接</span>
+                <span class="chip">导入内容</span>
+                <span class="chip">待学习</span>
+              </div>
+
+              <article class="item">
+                <div class="item-top">
+                  <span class="kind">
+                    <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+                      <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+                    </svg>
+                    链接
+                  </span>
+                  <span>来自 zhihu.com</span>
+                  <time>2 小时前</time>
+                </div>
+                <p class="item-text">
+                  为什么说「注意力」是这一代信息工作者最稀缺的资源——从剪贴板管理谈起
+                </p>
+                <div class="item-sum">
+                  <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" />
+                  </svg>
+                  <span>
+                    <span class="analyze-label">AI 摘要</span><br />
+                    作者认为信息过载的真正代价不是记不住，而是每次切换注意力的成本。建议把「收集」和「处理」在时间上分开。
+                  </span>
+                </div>
+                <div class="tags">
+                  <span class="tag">注意力管理</span>
+                  <span class="tag">信息过载</span>
+                  <span class="tag">工作方法</span>
+                </div>
+              </article>
+
+              <article class="item">
+                <div class="item-top">
+                  <span class="kind">
+                    <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <circle cx="8.5" cy="9.5" r="1.5" />
+                      <path d="m21 16-5-5-5 5-2-2-6 6" />
+                    </svg>
+                    图片
+                  </span>
+                  <span>识别了 214 字</span>
+                  <time>昨天</time>
+                </div>
+                <p class="item-text">会议白板照片 · 下个季度的三条主线</p>
+                <div class="tags">
+                  <span class="tag">季度规划</span>
+                  <span class="tag">会议记录</span>
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 三步 ============ -->
+      <section id="how">
+        <div class="shell">
+          <div class="section-head reveal">
+            <p class="eyebrow">整个流程</p>
+            <h2>你只多做一个动作：点一下。</h2>
+            <p class="lede">
+              不用先打开 OpenWiki，不用新建笔记，不用选文件夹。复制完继续做手上的事就行。
+            </p>
+          </div>
+
+          <div class="steps">
+            <div class="step reveal">
+              <p class="step-no">第 1 步</p>
+              <div class="stage">
+                <div class="copyflash" aria-hidden="true">
+                  <i></i>
+                  <i class="sel"></i>
+                  <i></i>
+                </div>
+              </div>
+              <h3>照常复制</h3>
+              <p>
+                在任何软件里按
+                <span class="key">⌘ C</span>
+                。文字、截图、链接都算，不用提前打开 OpenWiki。
+              </p>
+            </div>
+
+            <div class="step reveal d1">
+              <p class="step-no">第 2 步</p>
+              <div class="stage">
+                <div class="bubble" id="bubble" data-state="ticking">
+                  <div class="ring">
+                    <svg viewBox="0 0 36 36" aria-hidden="true">
+                      <circle class="track" cx="18" cy="18" r="16" />
+                      <circle class="prog" id="ringProg" cx="18" cy="18" r="16" />
+                    </svg>
+                    <b id="ringNum">10</b>
+                  </div>
+                  <p class="bubble-text" id="bubbleText">要把这条留下来吗？</p>
+                  <button class="bubble-save" id="bubbleSave" type="button">保存</button>
+                </div>
+              </div>
+              <h3>角落弹个小浮窗</h3>
+              <p>
+                倒计时 10 秒，就在鼠标所在那块屏幕。不挡视线，也不抢焦点——你可以直接不管它。
+              </p>
+            </div>
+
+            <div class="step reveal d2">
+              <p class="step-no">第 3 步</p>
+              <div class="stage">
+                <div class="fadeout" aria-hidden="true">
+                  <div class="mini" data-keep="true">
+                    <svg class="icon-sm icon" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5" /></svg>
+                    <span>留下了，AI 正在写摘要</span>
+                  </div>
+                  <div class="mini" data-keep="false">
+                    <svg class="icon-sm icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+                    <span>没管它，自己消失了</span>
+                  </div>
+                </div>
+              </div>
+              <h3>留下，或者算了</h3>
+              <p>
+                点了保存才进库。倒计时结束默认丢弃——所以不需要事后清理一堆没用的东西。
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 足球 ============ -->
+      <section id="football" class="band">
+        <div class="shell pitch-wrap">
+          <div class="reveal">
+            <div
+              class="pitch"
+              id="pitch"
+              role="application"
+              aria-label="足球射门演示：拖动足球瞄准，松手射门"
+            >
+              <div class="pitch-note">
+                <strong>刚复制的内容</strong>
+                注意力的真正代价不是记不住，而是每次切换的成本。
+              </div>
+              <div class="goal" aria-hidden="true"></div>
+              <span class="goal-label" aria-hidden="true">收藏</span>
+              <div class="aim" id="aim" aria-hidden="true"></div>
+              <div class="ball" id="ball" aria-hidden="true"></div>
+              <div class="pitch-hint" id="pitchHint">
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M9 11V6a2 2 0 1 1 4 0v5" />
+                  <path d="M13 11V4a2 2 0 1 1 4 0v9" />
+                  <path d="M17 11a2 2 0 1 1 4 0v5a6 6 0 0 1-6 6h-2a7 7 0 0 1-7-7v-3a2 2 0 1 1 4 0" />
+                </svg>
+                拉开球瞄准，松手射门
+              </div>
+              <div class="verdict" id="verdict" data-kind="goal">
+                <p class="verdict-head" id="verdictHead">进了，已收藏</p>
+                <p id="verdictBody">这条内容进库了，AI 会顺手写摘要。</p>
+              </div>
+            </div>
+            <p class="scoreboard" id="score" style="margin-top: 10px">射门 0 · 进 0</p>
+          </div>
+
+          <div class="pitch-side reveal d1">
+            <p class="eyebrow">仅 macOS · 可在设置里换回普通样式</p>
+            <h2>踢进去才算收藏。</h2>
+            <p class="lede">
+              把那个小浮窗换成一颗足球：复制之后，鼠标旁边会出现它。点一下直接射，或者按住拉开瞄准。进门就收藏，踢歪了这条就算了。
+            </p>
+            <ul class="facts">
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>球门大小可调（中 / 大 / 特大），越大越好进，也会多挡一点屏幕角落</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>踢球、撞墙、进网都有音效，不想听可以关掉</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>多屏幕使用时，球出现在鼠标所在的那块屏幕上</span>
+              </li>
+            </ul>
+            <p class="platform-note">
+              <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4m0 4h.01" />
+              </svg>
+              左边这块可以真的踢，试试看
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ AI 整理 ============ -->
+      <section>
+        <div class="shell split">
+          <div class="reveal">
+            <p class="eyebrow">存进去之后</p>
+            <h2>摘要和标签，不用你自己写。</h2>
+            <p class="lede">
+              复制链接会自动去读网页正文；截图会自动识别里面的文字；存下来的内容会被写成一句话摘要，再打上几个标签，以后按标签就能翻回来。
+            </p>
+            <ul class="facts">
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>知乎、微信公众号这类需要渲染的页面，用内置浏览器真实打开再读</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>外文内容可以自动翻译成中文</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>反复复制同一段话会自动合并，只留最完整的那条</span>
+              </li>
+            </ul>
+          </div>
+
+          <div class="analyze reveal d1" id="analyze">
+            <div>
+              <p class="analyze-label">刚存进来的内容</p>
+              <p class="analyze-src">
+                “注意力的真正代价不是记不住，而是每次切换的成本。把收集和处理在时间上分开，是唯一可行的办法。”
+              </p>
+            </div>
+            <div class="analyze-row">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3l1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z" />
+              </svg>
+              <span>
+                <span class="analyze-label">AI 摘要</span>
+                <span class="typed" id="typed"></span>
+              </span>
+            </div>
+            <div class="analyze-row">
+              <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7h.01" />
+                <path d="M20.6 11.4 12.9 3.7A2 2 0 0 0 11.5 3H5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 .6 1.4l7.7 7.7a2 2 0 0 0 2.8 0l6.5-6.5a2 2 0 0 0 0-2.8" />
+              </svg>
+              <span>
+                <span class="analyze-label">标签</span>
+                <span class="tags" id="tagRow" style="margin-top: 4px">
+                  <span class="tag tag-pop">注意力管理</span>
+                  <span class="tag tag-pop">工作方法</span>
+                  <span class="tag tag-pop">信息过载</span>
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 学习提醒 ============ -->
+      <section id="remind" class="band">
+        <div class="shell split">
+          <div class="desk reveal" id="desk">
+            <div class="desk-bar">
+              <span class="dot" aria-hidden="true"></span>
+              <span>OpenWiki 在后台运行</span>
+            </div>
+            <div class="reminder" id="reminder">
+              <p class="reminder-head">
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                </svg>
+                学习提醒
+              </p>
+              <h3>注意力的真正代价，是每次切换的成本</h3>
+              <p class="reminder-meta">4 天前收藏 · 来自 zhihu.com · 注意力管理、工作方法</p>
+              <div class="reminder-why">
+                <strong>为什么值得看</strong>
+                <p>
+                  你最近收藏了 5 条和「专注」有关的内容，这条把原因讲得最清楚，适合先看它。
+                </p>
+              </div>
+              <div class="reminder-actions">
+                <button class="btn btn-primary" type="button" data-act="open">去看看</button>
+                <button class="btn btn-secondary" type="button" data-act="learned">已学习</button>
+                <button class="btn btn-quiet" type="button" data-act="snooze">下次再说</button>
+              </div>
+            </div>
+            <p class="desk-toast" id="deskToast"></p>
+          </div>
+
+          <div class="reveal d1">
+            <p class="eyebrow">收藏最难的一步：回看</p>
+            <h2>过几天，它主动来找你。</h2>
+            <p class="lede">
+              收藏夹的老问题是存完就忘。OpenWiki 会从你存的东西里挑出值得再看一遍的，过几天在屏幕右上角弹一张卡片，并且告诉你它为什么挑中这条。
+            </p>
+            <ul class="facts">
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>点「已学习」就不再提醒；点「下次再说」会过几天再来</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>最多提醒 3 次，之后安静地留在「待学习」里等你</span>
+              </li>
+              <li>
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <span>鼠标停在卡片上时倒计时会暂停，读完再说</span>
+              </li>
+            </ul>
+            <p class="platform-note">
+              <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v4m0 4h.01" />
+              </svg>
+              左边的卡片可以点，试试三个按钮
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 能接住什么 ============ -->
+      <section>
+        <div class="shell">
+          <div class="section-head reveal">
+            <p class="eyebrow">能接住什么</p>
+            <h2>只要能复制，它就能接住。</h2>
+          </div>
+
+          <div class="grid-4">
+            <div class="card reveal">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7V5h16v2M9 19h6M12 5v14" />
+              </svg>
+              <h3>文字</h3>
+              <p>句子、代码、聊天里的一段话。密码和 API Key 会被自动过滤，不会存进去。</p>
+            </div>
+            <div class="card reveal d1">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <circle cx="8.5" cy="9.5" r="1.5" />
+                <path d="m21 16-5-5-5 5-2-2-6 6" />
+              </svg>
+              <h3>截图</h3>
+              <p>截完自动识别图里的文字，以后搜图片里的内容也搜得到。</p>
+            </div>
+            <div class="card reveal d2">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+                <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+              </svg>
+              <h3>链接</h3>
+              <p>复制网址就自动去读正文，存下来的是文章本身，不是一个以后打不开的链接。</p>
+            </div>
+            <div class="card reveal d3">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M14 3v5h5" />
+                <path d="M19 9v10a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7z" />
+              </svg>
+              <h3>文件</h3>
+              <p>PDF、Word、PPT 拖进来会转成文字存下。想随手记点什么，按 <code>⌘⇧C</code> 直接写。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 隐私 ============ -->
+      <section id="privacy" class="band">
+        <div class="shell split">
+          <div class="reveal">
+            <p class="eyebrow">数据在哪</p>
+            <h2>在你自己的电脑上。</h2>
+            <p class="lede">
+              OpenWiki 不做账号，也没有服务器替你保管内容。所有收藏存在本机的一个数据库文件里。
+            </p>
+            <ul class="privacy-list" style="margin-top: var(--sp-lg)">
+              <li>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <div>
+                  <h3>只存你点了保存的</h3>
+                  <p>没点的内容不会留下任何记录，剪贴板里其它东西也不会被悄悄收走。</p>
+                </div>
+              </li>
+              <li>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <div>
+                  <h3>AI 用你自己的 Key</h3>
+                  <p>在设置里填 Claude、OpenAI 或 Gemini 的 API Key，用哪家、花多少钱都由你决定。</p>
+                </div>
+              </li>
+              <li>
+                <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m20 6-11 11-5-5" /></svg>
+                <div>
+                  <h3>密码自动挡掉</h3>
+                  <p>识别到密码、私钥、API Key 这类内容时，浮窗不会弹出来。</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <div class="db-panel reveal d1" aria-label="本机数据库位置示意">
+            <div><span class="c">#  内容都在这一个文件里</span></div>
+            <div><span class="k">macOS</span>&nbsp;&nbsp;~/Library/Application&nbsp;Support/</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;openwiki/openwiki.db</div>
+            <div>&nbsp;</div>
+            <div><span class="k">Windows</span>&nbsp;%APPDATA%\openwiki\</div>
+            <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;openwiki.db</div>
+            <div>&nbsp;</div>
+            <div><span class="c">#  想搬走就整个拷走，想删就删掉</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FAQ ============ -->
+      <section>
+        <div class="shell">
+          <div class="section-head reveal">
+            <p class="eyebrow">常见问题</p>
+            <h2>你可能想先问的几件事。</h2>
+          </div>
+
+          <div class="faq reveal d1">
+            <details open>
+              <summary>
+                它跟剪贴板管理工具有什么不一样？
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </summary>
+              <p>
+                剪贴板工具保存你复制过的每一条，目的是让你能粘回去。OpenWiki 只保存你点了保存的那些，目的是让你几天后还能想起来——所以它会写摘要、打标签，还会主动提醒你回看。
+              </p>
+            </details>
+            <details>
+              <summary>
+                必须填 API Key 才能用吗？
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </summary>
+              <p>
+                收藏、搜索、看内容都不需要。摘要、标签、学习提醒这些要用 AI 的功能，需要在「设置 → AI」里填一个 API Key。
+              </p>
+            </details>
+            <details>
+              <summary>
+                Windows 版功能一样吗？
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </summary>
+              <p>
+                收藏、AI 摘要、学习提醒都一样。足球悬浮球目前只在 macOS 上提供。另外 Windows 版还没做代码签名，安装时系统会提示「已保护你的电脑」，点「更多信息 → 仍要运行」即可。
+              </p>
+            </details>
+            <details>
+              <summary>
+                会一直在后台偷偷记东西吗？
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </summary>
+              <p>
+                它需要监听剪贴板变化才能在你复制时弹出浮窗，但只有你点了保存的内容才会写进数据库。内容捕获也可以在设置里随时关掉。
+              </p>
+            </details>
+            <details>
+              <summary>
+                怎么更新？
+                <svg class="icon-sm icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+              </summary>
+              <p>
+                有新版时会在后台下载，下载完在右下角问你要不要现在安装。设置页里也能看到当前版本和下载进度。
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 底部 CTA ============ -->
+      <section class="band closer">
+        <div class="shell">
+          <h2 class="reveal">下一次复制，就开始了。</h2>
+          <p class="lede reveal d1">
+            装好，填一个 API Key，然后照常用电脑就行。剩下的事它自己做。
+          </p>
+          <div class="closer-cta reveal d2">
+            <a class="btn btn-primary" data-download="mac" href="https://github.com/kdsz001/OpenWiki/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v13m0 0 4.5-4.5M12 16l-4.5-4.5" />
+                <path d="M4 20h16" />
+              </svg>
+              Mac 下载
+            </a>
+            <a class="btn btn-secondary" data-download="windows" href="https://github.com/kdsz001/OpenWiki/releases/latest">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3v13m0 0 4.5-4.5M12 16l-4.5-4.5" />
+                <path d="M4 20h16" />
+              </svg>
+              Windows 下载
+            </a>
+          </div>
+          <p class="hero-note reveal d3" style="margin-top: var(--sp-md)">
+            <span data-release-status>正在检测最新版本…</span>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-row">
+        <span>OpenWiki <span data-release-version>v0.3.25</span> · MIT 开源</span>
+        <span class="footer-links">
+          <a href="https://github.com/kdsz001/OpenWiki" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/kdsz001/OpenWiki/releases" target="_blank" rel="noreferrer">更新记录</a>
+          <a href="https://github.com/kdsz001/OpenWiki/issues" target="_blank" rel="noreferrer">反馈问题</a>
+        </span>
+      </div>
+    </footer>
+
+    <script>
+      (() => {
+        "use strict";
+
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        document.documentElement.classList.add("js-anim");
+
+        /* ---------- 进场：元素滚到视野里再淡入上移 ---------- */
+        const revealables = document.querySelectorAll(".reveal");
+        if (!("IntersectionObserver" in window) || reduced) {
+          revealables.forEach((el) => el.classList.add("in"));
+        } else {
+          const io = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((e) => {
+                if (e.isIntersecting) {
+                  e.target.classList.add("in");
+                  io.unobserve(e.target);
+                }
+              });
+            },
+            { rootMargin: "0px 0px -12% 0px", threshold: 0.08 }
+          );
+          revealables.forEach((el) => io.observe(el));
+        }
+
+        /* ---------- 第 2 步：真在走的 10 秒倒计时浮窗 ---------- */
+        const bubble = document.getElementById("bubble");
+        const ringProg = document.getElementById("ringProg");
+        const ringNum = document.getElementById("ringNum");
+        const bubbleText = document.getElementById("bubbleText");
+        const bubbleSave = document.getElementById("bubbleSave");
+        const CIRC = 2 * Math.PI * 16;
+
+        let tick = null;
+        let left = 10;
+
+        const paintRing = () => {
+          ringProg.style.strokeDasharray = String(CIRC);
+          ringProg.style.strokeDashoffset = String(CIRC * (1 - left / 10));
+          ringNum.textContent = String(left);
+        };
+
+        const runCountdown = () => {
+          clearInterval(tick);
+          left = 10;
+          bubble.dataset.state = "ticking";
+          bubbleText.textContent = "要把这条留下来吗？";
+          bubbleSave.hidden = false;
+          paintRing();
+          if (reduced) return;
+          tick = setInterval(() => {
+            left -= 1;
+            if (left <= 0) {
+              clearInterval(tick);
+              left = 0;
+              paintRing();
+              bubbleText.textContent = "时间到，这条丢掉了";
+              setTimeout(runCountdown, 1800);
+              return;
+            }
+            paintRing();
+          }, 1000);
+        };
+
+        bubbleSave.addEventListener("click", () => {
+          clearInterval(tick);
+          bubble.dataset.state = "saved";
+          left = 10;
+          paintRing();
+          ringNum.textContent = "✓";
+          bubbleText.textContent = "已保存，正在写摘要";
+          bubbleSave.hidden = true;
+          setTimeout(runCountdown, 2200);
+        });
+
+        // 滚到这一格才开始走，避免一直在后台空转
+        if ("IntersectionObserver" in window) {
+          const bio = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((e) => {
+                if (e.isIntersecting) {
+                  runCountdown();
+                } else {
+                  clearInterval(tick);
+                }
+              });
+            },
+            { threshold: 0.4 }
+          );
+          bio.observe(bubble);
+        } else {
+          runCountdown();
+        }
+        paintRing();
+
+        /* ---------- 足球：真的能踢 ---------- */
+        const pitch = document.getElementById("pitch");
+        const ball = document.getElementById("ball");
+        const aim = document.getElementById("aim");
+        const hint = document.getElementById("pitchHint");
+        const verdict = document.getElementById("verdict");
+        const verdictHead = document.getElementById("verdictHead");
+        const verdictBody = document.getElementById("verdictBody");
+        const score = document.getElementById("score");
+
+        const R = 15; // 球半径
+        const GOAL_W = 0.34; // 球门占场地宽度比例
+        const GOAL_H = 0.3;
+
+        let W = 0;
+        let H = 0;
+        let bx = 0;
+        let by = 0;
+        let vx = 0;
+        let vy = 0;
+        let flying = false;
+        let dragging = false;
+        let pullX = 0;
+        let pullY = 0;
+        let raf = null;
+        let shots = 0;
+        let goals = 0;
+
+        const measure = () => {
+          const r = pitch.getBoundingClientRect();
+          W = r.width;
+          H = r.height;
+        };
+
+        const resetBall = () => {
+          measure();
+          bx = W * 0.3;
+          by = H * 0.56;
+          vx = 0;
+          vy = 0;
+          flying = false;
+          draw();
+        };
+
+        const draw = () => {
+          ball.style.transform = "translate(" + bx + "px," + by + "px)";
+        };
+
+        const showVerdict = (kind) => {
+          verdict.dataset.kind = kind;
+          if (kind === "goal") {
+            verdictHead.textContent = "进了，已收藏";
+            verdictBody.textContent = "这条内容进库了，AI 会顺手写摘要和标签。";
+          } else {
+            verdictHead.textContent = "没进，这条就算了";
+            verdictBody.textContent = "踢歪或者不踢都不会收藏，不用事后清理。";
+          }
+          verdict.dataset.show = "true";
+        };
+
+        const hideVerdict = () => {
+          verdict.dataset.show = "false";
+        };
+
+        const updateScore = () => {
+          score.textContent = "射门 " + shots + " · 进 " + goals;
+        };
+
+        const inGoal = () => {
+          const gx = W * (1 - GOAL_W);
+          const gy = H * (1 - GOAL_H);
+          return bx > gx + 4 && by > gy + 4;
+        };
+
+        const settle = () => {
+          flying = false;
+          if (inGoal()) {
+            goals += 1;
+            showVerdict("goal");
+          } else {
+            showVerdict("miss");
+          }
+          updateScore();
+          setTimeout(() => {
+            hideVerdict();
+            resetBall();
+          }, 2100);
+        };
+
+        const step = () => {
+          if (!flying) return;
+          bx += vx;
+          by += vy;
+          vy += 0.16; // 轻微下坠，射门手感更实
+          vx *= 0.99;
+          vy *= 0.99;
+
+          // 撞墙反弹
+          if (bx < R) {
+            bx = R;
+            vx = -vx * 0.62;
+          }
+          if (by < R) {
+            by = R;
+            vy = -vy * 0.62;
+          }
+          if (bx > W - R) {
+            bx = W - R;
+            vx = -vx * 0.62;
+          }
+          if (by > H - R) {
+            by = H - R;
+            vy = -vy * 0.62;
+            vx *= 0.9;
+          }
+
+          draw();
+
+          if (inGoal() && Math.abs(vx) + Math.abs(vy) < 9) {
+            settle();
+            return;
+          }
+          if (Math.abs(vx) + Math.abs(vy) < 0.5) {
+            settle();
+            return;
+          }
+          raf = requestAnimationFrame(step);
+        };
+
+        const localPoint = (ev) => {
+          const r = pitch.getBoundingClientRect();
+          const p = ev.touches ? ev.touches[0] : ev;
+          return { x: p.clientX - r.left, y: p.clientY - r.top };
+        };
+
+        const shoot = (ivx, ivy) => {
+          shots += 1;
+          updateScore();
+          hideVerdict();
+          hint.style.opacity = "0";
+          vx = ivx;
+          vy = ivy;
+          flying = true;
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(step);
+        };
+
+        const onDown = (ev) => {
+          if (flying) return;
+          measure();
+          const p = localPoint(ev);
+          // 点球附近才算抓住球；点别处直接朝球门方向射
+          const d = Math.hypot(p.x - bx, p.y - by);
+          if (d > 46) {
+            const tx = W * (1 - GOAL_W / 2);
+            const ty = H * (1 - GOAL_H / 2);
+            const ang = Math.atan2(ty - by, tx - bx);
+            shoot(Math.cos(ang) * 13, Math.sin(ang) * 13 - 1.2);
+            return;
+          }
+          dragging = true;
+          pullX = p.x;
+          pullY = p.y;
+          ev.preventDefault();
+        };
+
+        const onMove = (ev) => {
+          if (!dragging) return;
+          const p = localPoint(ev);
+          pullX = p.x;
+          pullY = p.y;
+          const dx = bx - pullX;
+          const dy = by - pullY;
+          const len = Math.min(Math.hypot(dx, dy), 150);
+          const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+          aim.style.opacity = "1";
+          aim.style.width = len + "px";
+          aim.style.left = bx + "px";
+          aim.style.top = by + "px";
+          aim.style.transform = "rotate(" + ang + "deg)";
+          ev.preventDefault();
+        };
+
+        const onUp = () => {
+          if (!dragging) return;
+          dragging = false;
+          aim.style.opacity = "0";
+          const dx = bx - pullX;
+          const dy = by - pullY;
+          const len = Math.hypot(dx, dy);
+          if (len < 8) {
+            // 当成点一下：直射球门
+            const tx = W * (1 - GOAL_W / 2);
+            const ty = H * (1 - GOAL_H / 2);
+            const ang = Math.atan2(ty - by, tx - bx);
+            shoot(Math.cos(ang) * 13, Math.sin(ang) * 13 - 1.2);
+            return;
+          }
+          const power = Math.min(len, 150) / 150;
+          const ang = Math.atan2(dy, dx);
+          shoot(Math.cos(ang) * 22 * power, Math.sin(ang) * 22 * power);
+        };
+
+        pitch.addEventListener("mousedown", onDown);
+        pitch.addEventListener("touchstart", onDown, { passive: false });
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("touchmove", onMove, { passive: false });
+        window.addEventListener("mouseup", onUp);
+        window.addEventListener("touchend", onUp);
+        window.addEventListener("resize", () => {
+          if (!flying) resetBall();
+        });
+
+        resetBall();
+        updateScore();
+
+        /* ---------- AI 摘要打字 + 标签依次出现 ---------- */
+        const typed = document.getElementById("typed");
+        const tagRow = document.getElementById("tagRow");
+        const SUMMARY =
+          "作者认为信息过载的代价在于注意力切换，建议把收集和处理分成两件事做。";
+        const tagEls = tagRow ? tagRow.querySelectorAll(".tag-pop") : [];
+
+        const showAllAnalyze = () => {
+          typed.textContent = SUMMARY;
+          typed.classList.remove("caret");
+          tagEls.forEach((t) => (t.dataset.in = "true"));
+        };
+
+        const playAnalyze = () => {
+          typed.textContent = "";
+          typed.classList.add("caret");
+          tagEls.forEach((t) => (t.dataset.in = "false"));
+          let i = 0;
+          const run = () => {
+            typed.textContent = SUMMARY.slice(0, i);
+            i += 1;
+            if (i <= SUMMARY.length) {
+              setTimeout(run, 42);
+            } else {
+              typed.classList.remove("caret");
+              tagEls.forEach((t, n) => setTimeout(() => (t.dataset.in = "true"), 140 * n));
+            }
+          };
+          run();
+        };
+
+        if (reduced || !("IntersectionObserver" in window)) {
+          showAllAnalyze();
+        } else {
+          let played = false;
+          const aio = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((e) => {
+                if (e.isIntersecting && !played) {
+                  played = true;
+                  playAnalyze();
+                }
+              });
+            },
+            { threshold: 0.45 }
+          );
+          aio.observe(document.getElementById("analyze"));
+          showAllAnalyze(); // 静止状态就是完整可读的
+        }
+
+        /* ---------- 学习提醒：滑入 + 三个按钮真能点 ---------- */
+        const reminder = document.getElementById("reminder");
+        const deskToast = document.getElementById("deskToast");
+        let toastTimer = null;
+
+        const slideIn = () => {
+          reminder.dataset.gone = "false";
+          reminder.dataset.in = "true";
+        };
+
+        const toast = (msg) => {
+          deskToast.textContent = msg;
+          deskToast.dataset.show = "true";
+          clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => {
+            deskToast.dataset.show = "false";
+            setTimeout(slideIn, 500);
+          }, 2000);
+        };
+
+        reminder.querySelectorAll("[data-act]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const act = btn.dataset.act;
+            reminder.dataset.gone = "true";
+            if (act === "learned") {
+              toast("已标记为已学习，以后不再提醒");
+            } else if (act === "snooze") {
+              toast("好的，4 天后再提醒你");
+            } else {
+              toast("在 OpenWiki 里打开了这条收藏");
+            }
+          });
+        });
+
+        if (reduced || !("IntersectionObserver" in window)) {
+          slideIn();
+        } else {
+          const rio = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((e) => {
+                if (e.isIntersecting) {
+                  setTimeout(slideIn, 240);
+                  rio.unobserve(e.target);
+                }
+              });
+            },
+            { threshold: 0.35 }
+          );
+          rio.observe(document.getElementById("desk"));
+        }
+
+        /* ---------- 下载按钮指向 GitHub 最新版 ---------- */
+        const LATEST_PAGE = "https://github.com/kdsz001/OpenWiki/releases/latest";
+        const LATEST_API = "https://api.github.com/repos/kdsz001/OpenWiki/releases/latest";
+
+        const setLinks = (kind, url, name) => {
+          document.querySelectorAll('[data-download="' + kind + '"]').forEach((a) => {
+            a.href = url;
+            if (name) a.setAttribute("download", name);
+          });
+        };
+        const setStatus = (msg) => {
+          document.querySelectorAll("[data-release-status]").forEach((el) => {
+            el.textContent = msg;
+          });
+        };
+        const pick = (assets, patterns) => {
+          for (const re of patterns) {
+            const hit = assets.find((a) => re.test(a.name));
+            if (hit) return hit;
+          }
+          return null;
+        };
+
+        fetch(LATEST_API, { headers: { Accept: "application/vnd.github+json" } })
+          .then((r) => {
+            if (!r.ok) throw new Error("github release request failed");
+            return r.json();
+          })
+          .then((rel) => {
+            const assets = Array.isArray(rel.assets) ? rel.assets : [];
+            const mac = pick(assets, [
+              /^OpenWiki_.*_aarch64\.dmg$/i,
+              /^OpenWiki_.*_(arm64|apple-silicon).*\.dmg$/i,
+              /^OpenWiki_.*\.dmg$/i,
+            ]);
+            const win = pick(assets, [
+              /^OpenWiki_.*_x64-setup\.exe$/i,
+              /^OpenWiki_.*setup.*\.exe$/i,
+              /^OpenWiki_.*\.msi$/i,
+            ]);
+            if (mac) setLinks("mac", mac.browser_download_url, mac.name);
+            if (win) setLinks("windows", win.browser_download_url, win.name);
+            if (rel.tag_name) {
+              document.querySelectorAll("[data-release-version]").forEach((el) => {
+                el.textContent = rel.tag_name;
+              });
+              setStatus("当前最新版 " + rel.tag_name);
+            }
+          })
+          .catch(() => {
+            setLinks("mac", LATEST_PAGE);
+            setLinks("windows", LATEST_PAGE);
+            setStatus("点按钮会打开 GitHub 最新发布页");
+          });
+      })();
+    </script>
+  </body>
+</html>

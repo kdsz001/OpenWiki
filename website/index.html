@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenWiki - 自动整理你的个人知识库</title>
+    <meta
+      name="description"
+      content="OpenWiki 是一款桌面端 AI 知识管理工具，帮你收集剪贴板、截图和链接，并自动整理成个人知识库与周报回顾。"
+    />
+    <link rel="canonical" href="https://openwiki.pages.dev/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="OpenWiki" />
+    <meta property="og:title" content="OpenWiki - 自动整理你的个人知识库" />
+    <meta property="og:description" content="OpenWiki 是一款桌面端 AI 知识管理工具，帮你收集剪贴板、截图和链接，并自动整理成个人知识库与周报回顾。" />
+    <meta property="og:url" content="https://openwiki.pages.dev/" />
+    <meta property="og:image" content="https://openwiki.pages.dev/assets/screenshots/content.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="OpenWiki - 自动整理你的个人知识库" />
+    <meta name="twitter:description" content="OpenWiki 是一款桌面端 AI 知识管理工具，帮你收集剪贴板、截图和链接，并自动整理成个人知识库与周报回顾。" />
+    <meta name="twitter:image" content="https://openwiki.pages.dev/assets/screenshots/content.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://api.fontshare.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #fafaf8;
+        --surface: #ffffff;
+        --surface-raised: #f5f5f0;
+        --border: #e7e5e4;
+        --text: #1c1917;
+        --text-secondary: #57534e;
+        --text-muted: #a8a29e;
+        --accent: #f97316;
+        --accent-hover: #ea580c;
+        --accent-soft: #fff7ed;
+        --shadow: 0 18px 60px rgba(28, 25, 23, 0.1);
+        --radius-sm: 6px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --content: 1120px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          "Plus Jakarta Sans",
+          -apple-system,
+          BlinkMacSystemFont,
+          "PingFang SC",
+          "Hiragino Sans GB",
+          "Microsoft YaHei",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      img {
+        display: block;
+        max-width: 100%;
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        border-bottom: 1px solid rgba(231, 229, 228, 0.82);
+        background: rgba(250, 250, 248, 0.86);
+        backdrop-filter: blur(18px);
+      }
+
+      .nav {
+        width: min(100% - 32px, var(--content));
+        height: 64px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .brand-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 9px;
+        box-shadow: 0 8px 22px rgba(28, 25, 23, 0.14);
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+      }
+
+      .button {
+        min-height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        border-radius: var(--radius-sm);
+        border: 1px solid transparent;
+        padding: 0 16px;
+        font-size: 14px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .button-primary {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .button-primary:hover {
+        background: var(--accent-hover);
+      }
+
+      .button-secondary {
+        background: var(--surface);
+        border-color: var(--border);
+        color: var(--text);
+      }
+
+      .button-secondary:hover {
+        border-color: #d6d3d1;
+        background: #fff;
+      }
+
+      main {
+        overflow: hidden;
+      }
+
+      .hero {
+        width: min(100% - 32px, var(--content));
+        margin: 0 auto;
+        padding: 58px 0 44px;
+        display: grid;
+        align-content: center;
+        gap: 36px;
+      }
+
+      .hero-copy {
+        max-width: 760px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        min-height: 30px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--text-secondary);
+        padding: 0 12px;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        margin-top: 24px;
+        font-family: "Cabinet Grotesk", "Plus Jakarta Sans", sans-serif;
+        max-width: 940px;
+        font-size: clamp(42px, 6.7vw, 78px);
+        line-height: 1.02;
+        letter-spacing: 0;
+        font-weight: 800;
+        text-wrap: balance;
+      }
+
+      h1 span {
+        display: block;
+        white-space: nowrap;
+      }
+
+      .hero-subtitle {
+        max-width: 680px;
+        margin-top: 24px;
+        color: var(--text-secondary);
+        font-size: clamp(18px, 2.2vw, 24px);
+        line-height: 1.55;
+        font-weight: 500;
+      }
+
+      .hero-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 32px;
+      }
+
+      .capture-flow {
+        max-width: 780px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .flow-step {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: rgba(255, 255, 255, 0.72);
+        padding: 14px;
+      }
+
+      .flow-step strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      .flow-step span {
+        display: block;
+        margin-top: 6px;
+        color: var(--text-secondary);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .hero-note {
+        margin-top: 14px;
+        color: var(--text-muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .download-status {
+        color: var(--text-muted);
+      }
+
+      .hero-visual {
+        position: relative;
+      }
+
+      .window-frame {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .window-bar {
+        height: 42px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        border-bottom: 1px solid var(--border);
+        padding: 0 16px;
+        background: var(--surface-raised);
+      }
+
+      .traffic {
+        display: flex;
+        gap: 7px;
+      }
+
+      .traffic span {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: #d6d3d1;
+      }
+
+      .window-title {
+        color: var(--text-muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .hero-screenshot {
+        aspect-ratio: 2400 / 1700;
+        width: 100%;
+        max-height: 360px;
+        object-fit: cover;
+        object-position: center top;
+      }
+
+      .section {
+        width: min(100% - 32px, var(--content));
+        margin: 0 auto;
+        padding: 72px 0;
+      }
+
+      .section-header {
+        max-width: 720px;
+        margin-bottom: 32px;
+      }
+
+      .section-kicker {
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 800;
+        margin-bottom: 12px;
+      }
+
+      h2 {
+        font-family: "Cabinet Grotesk", "Plus Jakarta Sans", sans-serif;
+        font-size: clamp(34px, 5vw, 56px);
+        line-height: 1;
+        letter-spacing: 0;
+        font-weight: 800;
+      }
+
+      .section-lede {
+        margin-top: 16px;
+        color: var(--text-secondary);
+        font-size: 18px;
+        line-height: 1.65;
+      }
+
+      .feature-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .feature {
+        min-height: 180px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        padding: 18px;
+      }
+
+      .feature-number {
+        font-family: "JetBrains Mono", monospace;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 500;
+      }
+
+      .feature h3 {
+        margin-top: 28px;
+        font-size: 18px;
+        line-height: 1.35;
+      }
+
+      .feature p {
+        margin-top: 10px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .showcase {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      .showcase-item {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        overflow: hidden;
+      }
+
+      .showcase-text {
+        padding: 18px 18px 16px;
+      }
+
+      .showcase-text h3 {
+        font-size: 18px;
+      }
+
+      .showcase-text p {
+        margin-top: 8px;
+        color: var(--text-secondary);
+        font-size: 14px;
+        line-height: 1.7;
+      }
+
+      .showcase-image {
+        aspect-ratio: 2400 / 1700;
+        width: 100%;
+        object-fit: cover;
+        object-position: center top;
+        border-top: 1px solid var(--border);
+      }
+
+      .privacy-band {
+        border-top: 1px solid var(--border);
+        border-bottom: 1px solid var(--border);
+        background: var(--surface-raised);
+      }
+
+      .privacy-content {
+        width: min(100% - 32px, var(--content));
+        margin: 0 auto;
+        padding: 64px 0;
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 48px;
+        align-items: start;
+      }
+
+      .privacy-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .privacy-item {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        color: var(--text-secondary);
+        font-size: 15px;
+        line-height: 1.7;
+      }
+
+      .check {
+        width: 18px;
+        height: 18px;
+        margin-top: 3px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 11px;
+        flex: 0 0 auto;
+      }
+
+      .download-panel {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--surface);
+        padding: 30px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 24px;
+        align-items: center;
+      }
+
+      .download-panel p {
+        margin-top: 10px;
+        color: var(--text-secondary);
+        line-height: 1.7;
+      }
+
+      .download-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: flex-end;
+      }
+
+      .site-footer {
+        width: min(100% - 32px, var(--content));
+        margin: 0 auto;
+        padding: 32px 0 48px;
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        color: var(--text-muted);
+        font-size: 13px;
+      }
+
+      @media (max-width: 860px) {
+        .nav {
+          height: 58px;
+        }
+
+        .nav-links a:not(.button) {
+          display: none;
+        }
+
+        .hero {
+          min-height: auto;
+          padding: 42px 0 34px;
+          gap: 34px;
+        }
+
+        .feature-grid,
+        .showcase,
+        .capture-flow,
+        .privacy-content,
+        .download-panel {
+          grid-template-columns: 1fr;
+        }
+
+        .download-actions {
+          justify-content: stretch;
+        }
+
+        .feature {
+          min-height: auto;
+        }
+
+        .download-panel {
+          padding: 22px;
+        }
+      }
+
+      @media (max-width: 520px) {
+        .nav {
+          width: min(100% - 24px, var(--content));
+        }
+
+        .brand span:last-child {
+          display: none;
+        }
+
+        .section,
+        .privacy-content,
+        .site-footer,
+        .hero {
+          width: min(100% - 24px, var(--content));
+        }
+
+        h1 {
+          font-size: 36px;
+        }
+
+        .hero-screenshot {
+          max-height: 300px;
+        }
+
+        .hero-actions {
+          display: grid;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .section {
+          padding: 52px 0;
+        }
+
+        .site-footer {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <nav class="nav" aria-label="主导航">
+        <a class="brand" href="#" aria-label="OpenWiki 首页">
+          <img class="brand-icon" src="./assets/openwiki-icon.png" alt="" width="32" height="32" />
+          <span>OpenWiki</span>
+        </a>
+        <div class="nav-links">
+          <a href="#features">功能</a>
+          <a href="#screenshots">截图</a>
+          <a href="#privacy">隐私</a>
+          <a class="button button-secondary" href="https://github.com/kdsz001/OpenWiki" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <span class="eyebrow">Mac 与 Windows 桌面端 AI 知识管理工具</span>
+          <h1 id="hero-title"><span>把每天看过的内容，</span><span>变成你的个人知识库。</span></h1>
+          <p class="hero-subtitle">
+            复制文本、图片或链接后，桌面会出现一个 10 秒倒计时的小浮窗。想留下就点保存，不需要就继续做自己的事。
+          </p>
+          <div class="hero-actions" aria-label="主要操作">
+            <a class="button button-primary" data-download="mac" href="https://github.com/kdsz001/OpenWiki/releases/latest" target="_blank" rel="noreferrer">Mac 下载</a>
+            <a class="button button-secondary" data-download="windows" href="https://github.com/kdsz001/OpenWiki/releases/latest" target="_blank" rel="noreferrer">Windows 下载</a>
+          </div>
+          <p class="hero-note">
+            本地优先存储。支持 Claude、OpenAI、Gemini 等 AI 提供商。<span class="download-status" data-release-status>正在检测 GitHub 最新版本...</span>
+          </p>
+        </div>
+
+        <div class="capture-flow" aria-label="OpenWiki 捕获流程">
+          <div class="flow-step">
+            <strong>复制任何内容</strong>
+            <span>文字、图片、链接，都不用提前打开 OpenWiki。</span>
+          </div>
+          <div class="flow-step">
+            <strong>10 秒小浮窗</strong>
+            <span>桌面轻轻弹出提醒，不打断当前工作。</span>
+          </div>
+          <div class="flow-step">
+            <strong>点保存，或不管它</strong>
+            <span>有价值的留下，没用的自动消失。</span>
+          </div>
+        </div>
+
+        <div class="hero-visual" aria-label="OpenWiki 应用界面预览">
+          <div class="window-frame">
+            <div class="window-bar">
+              <div class="traffic" aria-hidden="true"><span></span><span></span><span></span></div>
+              <div class="window-title">OpenWiki · Knowledge Base</div>
+            </div>
+            <img class="hero-screenshot" src="./assets/screenshots/wiki.png" alt="OpenWiki 知识库界面截图" />
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="features" aria-labelledby="features-title">
+        <div class="section-header">
+          <p class="section-kicker">为什么需要它</p>
+          <h2 id="features-title">信息不是少了，是太容易散了。</h2>
+          <p class="section-lede">
+            复制过的句子、临时截的图、稍后再看的链接，最后经常消失在浏览器、聊天记录和剪贴板里。OpenWiki 做的是在你复制的那一刻轻轻接住它，再慢慢整理成能回看的结构。
+          </p>
+        </div>
+
+        <div class="feature-grid">
+          <article class="feature">
+            <div class="feature-number">01</div>
+            <h3>复制时顺手保存</h3>
+            <p>复制后出现 10 秒倒计时浮窗，点一下保存即可。不需要的内容不用处理，它会自己消失。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number">02</div>
+            <h3>自动生成 Wiki</h3>
+            <p>AI 会把内容整理成概念、实体和主题页面，让散乱素材变成可继续生长的知识库。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number">03</div>
+            <h3>看见想法之间的关系</h3>
+            <p>知识图谱把页面之间的连接展示出来，适合复盘项目、研究主题和长期兴趣。</p>
+          </article>
+          <article class="feature">
+            <div class="feature-number">04</div>
+            <h3>每周自动回顾</h3>
+            <p>一键生成周报，看清自己这周关注了什么、忽略了什么，以及下一步可以做什么。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="screenshots" aria-labelledby="screenshots-title">
+        <div class="section-header">
+          <p class="section-kicker">真实界面</p>
+          <h2 id="screenshots-title">不是另一个空白笔记本。</h2>
+          <p class="section-lede">OpenWiki 从捕获开始，最终落到可以浏览、提问、连接和回顾的个人资料库。</p>
+        </div>
+
+        <div class="showcase">
+          <article class="showcase-item">
+            <div class="showcase-text">
+              <h3>内容捕获</h3>
+              <p>按类型和时间浏览保存过的文本、图片与链接。</p>
+            </div>
+            <img class="showcase-image" src="./assets/screenshots/content.png" alt="OpenWiki 内容捕获界面截图" />
+          </article>
+          <article class="showcase-item">
+            <div class="showcase-text">
+              <h3>知识图谱</h3>
+              <p>用关系视图看清主题、页面和素材之间的连接。</p>
+            </div>
+            <img class="showcase-image" src="./assets/screenshots/graph.png" alt="OpenWiki 知识图谱界面截图" />
+          </article>
+          <article class="showcase-item">
+            <div class="showcase-text">
+              <h3>AI 洞察</h3>
+              <p>从保存的内容里提炼每周重点、盲区和行动建议。</p>
+            </div>
+            <img class="showcase-image" src="./assets/screenshots/insights.png" alt="OpenWiki AI 洞察界面截图" />
+          </article>
+          <article class="showcase-item">
+            <div class="showcase-text">
+              <h3>个人 Wiki</h3>
+              <p>把信息碎片整理成可继续阅读、追问和维护的页面。</p>
+            </div>
+            <img class="showcase-image" src="./assets/screenshots/wiki.png" alt="OpenWiki 个人 Wiki 界面截图" />
+          </article>
+        </div>
+      </section>
+
+      <section class="privacy-band" id="privacy" aria-labelledby="privacy-title">
+        <div class="privacy-content">
+          <div>
+            <p class="section-kicker">本地优先</p>
+            <h2 id="privacy-title">你的资料库，先属于你自己。</h2>
+            <p class="section-lede">OpenWiki 不是把所有东西悄悄吸走的工具。它让你决定保存哪些内容，并把数据放在本地 SQLite 数据库里。</p>
+          </div>
+          <div class="privacy-list">
+            <div class="privacy-item">
+              <span class="check">✓</span>
+              <span>只有你主动选择保留的内容才会进入资料库。</span>
+            </div>
+            <div class="privacy-item">
+              <span class="check">✓</span>
+              <span>本地数据库保存内容，适合长期积累个人知识资产。</span>
+            </div>
+            <div class="privacy-item">
+              <span class="check">✓</span>
+              <span>AI 提供商由你配置，可以使用自己的 API Key 或 OAuth 登录。</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="download-title">
+        <div class="download-panel">
+          <div>
+            <h2 id="download-title">开始建立自己的 OpenWiki。</h2>
+            <p>下载桌面版，配置 AI 提供商后，就可以从下一次复制开始积累。</p>
+          </div>
+          <div class="download-actions" aria-label="下载 OpenWiki">
+            <a class="button button-primary" data-download="mac" href="https://github.com/kdsz001/OpenWiki/releases/latest" target="_blank" rel="noreferrer">Mac 下载</a>
+            <a class="button button-secondary" data-download="windows" href="https://github.com/kdsz001/OpenWiki/releases/latest" target="_blank" rel="noreferrer">Windows 下载</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>OpenWiki <span data-release-version>v0.3.14</span></span>
+      <span>MIT Licensed · Built for personal knowledge work</span>
+    </footer>
+    <script>
+      (() => {
+        const latestReleaseUrl = "https://github.com/kdsz001/OpenWiki/releases/latest";
+        const latestApiUrl = "https://api.github.com/repos/kdsz001/OpenWiki/releases/latest";
+
+        const setLinks = (kind, url, assetName) => {
+          document.querySelectorAll(`[data-download="${kind}"]`).forEach((link) => {
+            link.href = url;
+            if (assetName) link.setAttribute("download", assetName);
+          });
+        };
+
+        const setStatus = (message) => {
+          document.querySelectorAll("[data-release-status]").forEach((el) => {
+            el.textContent = message;
+          });
+        };
+
+        const findAsset = (assets, matchers) => {
+          for (const matcher of matchers) {
+            const asset = assets.find((item) => matcher.test(item.name));
+            if (asset) return asset;
+          }
+          return null;
+        };
+
+        fetch(latestApiUrl, { headers: { Accept: "application/vnd.github+json" } })
+          .then((response) => {
+            if (!response.ok) throw new Error("GitHub latest release request failed");
+            return response.json();
+          })
+          .then((release) => {
+            const assets = Array.isArray(release.assets) ? release.assets : [];
+            const macAsset = findAsset(assets, [
+              /^OpenWiki_.*_aarch64\.dmg$/i,
+              /^OpenWiki_.*_(arm64|apple-silicon).*\.dmg$/i,
+              /^OpenWiki_.*\.dmg$/i,
+            ]);
+            const windowsAsset = findAsset(assets, [
+              /^OpenWiki_.*_x64-setup\.exe$/i,
+              /^OpenWiki_.*setup.*\.exe$/i,
+              /^OpenWiki_.*\.msi$/i,
+            ]);
+
+            if (macAsset) setLinks("mac", macAsset.browser_download_url, macAsset.name);
+            if (windowsAsset) setLinks("windows", windowsAsset.browser_download_url, windowsAsset.name);
+
+            if (release.tag_name) {
+              document.querySelectorAll("[data-release-version]").forEach((el) => {
+                el.textContent = release.tag_name;
+              });
+              setStatus(`当前自动指向 GitHub 最新版 ${release.tag_name}。`);
+            }
+          })
+          .catch(() => {
+            setLinks("mac", latestReleaseUrl);
+            setLinks("windows", latestReleaseUrl);
+            setStatus("暂时无法检测具体安装包，按钮会打开 GitHub 最新发布页。");
+          });
+      })();
+    </script>
+  </body>
+</html>

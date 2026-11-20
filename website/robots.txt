@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://openwiki.pages.dev/sitemap.xml
