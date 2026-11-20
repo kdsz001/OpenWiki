@@ -1,12 +1,8 @@
 use std::path::{Path, PathBuf};
 
-const APP_DATA_DIR: &str = "com.openwiki.app";
-
+/// Images live with the database, wherever the user keeps it (see `data_location`).
 fn app_data_dir() -> Result<PathBuf, String> {
-    dirs::data_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join("Library").join("Application Support")))
-        .map(|base| base.join(APP_DATA_DIR))
-        .ok_or_else(|| "Cannot determine application data directory".to_string())
+    crate::storage::data_location::data_dir()
 }
 
 fn ensure_dir(name: &str) -> Result<PathBuf, String> {

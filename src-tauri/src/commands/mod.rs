@@ -1,6 +1,7 @@
 pub mod attention;
 pub mod capture;
 
+pub mod data_location;
 pub mod datahub;
 pub mod digest;
 pub mod mcp;

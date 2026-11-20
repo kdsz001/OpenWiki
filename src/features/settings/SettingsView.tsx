@@ -28,6 +28,7 @@ import {
   type UpdateSettings,
 } from "../../services/updateService";
 import { useUpdateStore } from "../../stores/updateStore";
+import { DataLocationSection } from "./DataLocationSection";
 import {
   getAutomationStatus,
   openAutomationSettings,
@@ -1037,6 +1038,8 @@ export function SettingsView() {
               </button>
             </div>
           </div>
+
+          <DataLocationSection />
 
           {/* Export section */}
           <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 mt-6">{t("export.title")}</h2>

@@ -99,10 +99,8 @@ impl Database {
     }
 
     pub(crate) fn get_db_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let data_dir = dirs::data_dir()
-            .ok_or("Could not find data directory")?
-            .join("com.openwiki.app");
-        Ok(data_dir.join("openwiki.db"))
+        let data_dir = super::data_location::data_dir()?;
+        Ok(data_dir.join(super::data_location::DB_FILE))
     }
 
     fn run_migrations(&self) -> Result<(), Box<dyn std::error::Error>> {

@@ -23,7 +23,7 @@ fn open_path(path: &Path, label: &str) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
+pub(crate) fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
     std::process::Command::new("open")
         .arg("-R")
         .arg(path)
@@ -33,7 +33,7 @@ fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
+pub(crate) fn reveal_path(path: &Path, label: &str) -> Result<(), String> {
     let target = if path.is_file() {
         path.parent().unwrap_or(path)
     } else {
@@ -197,9 +197,7 @@ pub async fn open_export_dir(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn open_data_folder() -> Result<(), String> {
-    let data_dir = dirs::data_dir()
-        .unwrap_or_default()
-        .join("com.openwiki.app");
+    let data_dir = crate::storage::data_location::data_dir()?;
     std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
 
     // On macOS reveal the db file in Finder, targeting a file inside the
@@ -228,10 +226,8 @@ pub async fn get_storage_info(state: State<'_, AppState>) -> Result<serde_json::
         .map_err(|e| e.to_string())?;
 
     // Get database file size
-    let db_path = dirs::data_dir()
-        .unwrap_or_default()
-        .join("com.openwiki.app")
-        .join("openwiki.db");
+    let db_path = crate::storage::data_location::data_dir()?
+        .join(crate::storage::data_location::DB_FILE);
     let disk_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
     let disk_mb = disk_bytes as f64 / (1024.0 * 1024.0);
 

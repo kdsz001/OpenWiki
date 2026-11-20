@@ -44,6 +44,8 @@ rand = "0.8"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-dialog = "2"
+rfd = { version = "0.16", default-features = false, features = ["common-controls-v6"] }
 
 [dev-dependencies]
 tempfile = "3"

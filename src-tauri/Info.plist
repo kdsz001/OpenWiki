@@ -11,6 +11,10 @@
 
         Without this key, macOS shows a generic (and scary) default.
     -->
+    <key>NSRemovableVolumesUsageDescription</key>
+    <string>你把 OpenWiki 的数据放在了外接硬盘上，需要这个权限才能读取和保存你的收藏。</string>
+    <key>NSNetworkVolumesUsageDescription</key>
+    <string>你把 OpenWiki 的数据放在了网络硬盘上，需要这个权限才能读取和保存你的收藏。</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>OpenWiki 需要这个权限来识别你是从哪个应用复制的内容（比如微信、Chrome、备忘录等），让剪贴板历史能显示来源。不会访问其他数据。</string>
 </dict>

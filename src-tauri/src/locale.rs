@@ -44,7 +44,7 @@ fn resolve_from_mode(mode: &str) -> String {
 ///   3. Windows system locale
 ///   4. `LANG` env var              (only reliable on Linux)
 ///   5. default → zh-CN
-fn system_locale() -> String {
+pub(crate) fn system_locale() -> String {
     #[cfg(target_os = "macos")]
     {
         // 1. AppleLocale — single-line output like "zh_CN\n"

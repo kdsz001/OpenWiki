@@ -30,6 +30,11 @@ pub fn run() {
         return;
     }
 
+    // Data moved to another drive that isn't connected: ask before opening (or creating) anything.
+    if !storage::data_location::wait_until_reachable() {
+        return;
+    }
+
     let db = Arc::new(storage::database::Database::new().expect("Failed to initialize database"));
 
     let detector = CaptureDetector::new();
@@ -59,6 +64,7 @@ pub fn run() {
         )
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             // Windows opens the main window unless launch at startup started the app (see setup).
@@ -330,6 +336,11 @@ pub fn run() {
             commands::datahub::export_range_single,
             commands::datahub::export_current_radar_report,
             commands::datahub::open_data_folder,
+            commands::data_location::get_data_location,
+            commands::data_location::pick_data_folder,
+            commands::data_location::move_data_dir,
+            commands::data_location::remove_previous_data,
+            commands::data_location::open_previous_data_folder,
             commands::attention::get_attention_insights,
             commands::attention::trigger_attention_analysis,
             commands::oauth::start_openai_oauth,
